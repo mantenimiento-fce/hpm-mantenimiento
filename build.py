@@ -367,6 +367,7 @@ def build():
             img = qrcode.make(m["url"], image_factory=qrcode.image.svg.SvgPathImage, box_size=20, border=2)
             write(f"qr/{m['slug']}.svg", img.to_string().decode())
     write("qr/index.html", env.get_template("qr.html").render(machines=machines, base_url=base_url))
+    shutil.copy(BASE / "templates" / "asistente.js", OUT / "asistente.js")
     write(".nojekyll", "")  # GitHub Pages: servir tal cual, sin Jekyll
     return machines
 

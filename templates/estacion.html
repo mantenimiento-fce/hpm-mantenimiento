@@ -55,6 +55,19 @@
   #zoom .x { position: fixed; top: 8px; right: 12px; font-size: 28px; color: #fff; background: none; border: 0; cursor: pointer; }
 
   .leyenda { padding: 12px 16px; font-size: 14px; margin-top: 16px; }
+
+  /* asistente de diagnóstico */
+  .diag { padding: 12px; margin-bottom: 16px; }
+  .diag label { display: block; font-weight: 800; color: var(--navy); margin-bottom: 6px; }
+  .diag input { width: 100%; padding: 10px 12px; font: inherit; border: 1px solid var(--line); border-radius: 8px; }
+  .diag p { margin: 10px 0 0; font-size: 14px; }
+  .diag-seg { background: #fff8e1; border-radius: 8px; padding: 8px 10px; }
+  .diag-item { display: grid; grid-template-columns: 40px 1fr; column-gap: 10px; margin-top: 10px; padding: 8px 10px;
+               border: 1px solid var(--line); border-radius: 10px; color: inherit; text-decoration: none; }
+  .diag-n { grid-row: span 3; height: 40px; border-radius: 10px; background: var(--blue); color: #fff; display: grid; place-items: center; }
+  .diag-punto { font-weight: 800; color: var(--navy); }
+  .diag-contra { font-size: 14px; }
+  .paso:target { outline: 3px solid var(--amber); }
 </style>
 {% endblock %}
 {% block content %}
@@ -66,6 +79,12 @@
   {% endfor %}
 </nav>
 <div id="shade" onclick="toggleMenu(false)"></div>
+
+<section class="card diag" aria-label="Asistente de diagnóstico">
+  <label for="diag-q">¿Qué falla en esta estación?</label>
+  <input id="diag-q" type="search" autocomplete="off" placeholder="Ej. no conecta, fuga de aire, se calienta">
+  <div id="diag-res" aria-live="polite"></div>
+</section>
 
 <div class="card info">
   <div><b>EQUIPO</b>{{ m.info.equipo }}</div>
@@ -80,7 +99,7 @@
 {% for s in m.secciones %}
 <h2 class="sec" id="{{ s.id }}">{{ s.nombre }}</h2>
 {% for p in s.pasos %}
-<article class="paso" id="paso-{{ p.n }}">
+<article class="paso" id="paso-{{ p.n }}" data-sec="{{ s.nombre }}">
   <div class="h"><div class="n">{{ p.n }}</div><div class="punto">{{ p.punto }}</div></div>
   <table class="f">
     <tr><th>METODO</th><td>{{ p.metodo }}</td></tr>
@@ -122,4 +141,5 @@
   function closeZoom() { document.getElementById('zoom').classList.remove('open'); }
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeZoom(); toggleMenu(false); } });
 </script>
+<script src="../../asistente.js"></script>
 {% endblock %}
