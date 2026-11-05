@@ -9,6 +9,7 @@ import colorsys
 import hashlib
 import html
 import io
+import json
 import os
 import shutil
 import posixpath
@@ -368,6 +369,12 @@ def build():
             write(f"qr/{m['slug']}.svg", img.to_string().decode())
     write("qr/index.html", env.get_template("qr.html").render(machines=machines, base_url=base_url))
     shutil.copy(BASE / "templates" / "asistente.js", OUT / "asistente.js")
+    # datos de la consulta sobre hpm: un solo archivo para buscar por estación o en todas
+    pasos = [{"e": m["slug"], "sec": s["nombre"], **{k: v for k, v in p.items() if k != "figs"}}
+             for m in machines for s in m["secciones"] for p in s["pasos"]]
+    write("hpm.json", json.dumps({"leyenda": next((m["leyenda"] for m in machines if m["leyenda"]), ""),
+                                  "estaciones": [{"slug": m["slug"], "nombre": m["info"]["equipo"]} for m in machines],
+                                  "pasos": pasos}, ensure_ascii=False))
     write(".nojekyll", "")  # GitHub Pages: servir tal cual, sin Jekyll
     return machines
 

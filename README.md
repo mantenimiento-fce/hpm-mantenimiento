@@ -4,12 +4,14 @@ Sitio web estático generado desde los Excel de `HPM/`. Cada estación tiene su 
 (`/estacion/<estacion>/`) con menú de SECCIÓN / PARTE, todos los pasos tal cual el Excel
 y sus imágenes con los números de paso. Se consulta escaneando el QR pegado en la estación.
 
-## Asistente de diagnóstico
+## Consulta sobre hpm
 
-En cada estación, "¿Qué falla en esta estación?" recibe un síntoma en palabras del técnico y muestra hasta 5
-pasos con su contramedida, siempre con el aviso de seguridad. Corre en el navegador: sin servidor, sin claves y
-sin modelo que descargar, y solo muestra texto del Excel, así que no puede inventar procedimientos.
-Para que entienda palabras nuevas, agregarlas a `SINTOMAS` en `templates/asistente.js`.
+En inicio y en cada estación, "Consulta sobre hpm" responde preguntas informativas en lenguaje natural con los datos
+del Excel: cada cuándo se hace algo, cuánto tarda, con qué herramienta o material, qué criterio aplica, qué toca cada
+semana o trimestre, totales de tiempo y qué significa cada sigla. Corre en el navegador, sin servidor, claves ni modelo
+que descargar, y no redacta texto propio sobre los procedimientos.
+Para que entienda palabras nuevas, agregarlas a `SINONIMOS` en `templates/asistente.js`. Las preguntas que deben
+seguir funcionando están en `casos_consulta.json`.
 
 ## Publicar en GitHub Pages
 
@@ -26,7 +28,7 @@ set BASE_URL=https://<usuario>.github.io/<repo>
 py build.py
 py -m http.server -d _site 8000
 ```
-Abrir http://localhost:8000. `py test_build.py` verifica el parseo de los 4 HPM y el asistente (requiere Node).
+Abrir http://localhost:8000. `py test_build.py` verifica el parseo de los 4 HPM y la consulta (requiere Node).
 
 ## Agregar o cambiar estaciones
 
