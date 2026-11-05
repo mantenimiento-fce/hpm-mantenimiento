@@ -14,12 +14,12 @@
 <p class="muted">Seleccione la estación para consultar su hoja de mantenimiento preventivo.</p>
 <div class="grid">
   {% for m in machines %}
-  <a class="card station" href="{{ url_for('estacion', slug=m.slug) }}">
+  <a class="card station" href="estacion/{{ m.slug }}/">
     <h2>{{ m.info.equipo }}</h2>
     <div class="muted">Cliente {{ m.info.cliente }} · Línea {{ m.info.linea }}</div>
     <div class="stats"><span>{{ m.secciones|length }} secciones</span><span>{{ m.total }} puntos</span></div>
   </a>
   {% endfor %}
 </div>
-<a class="qr-link" href="{{ url_for('qr_page') }}">🖨 Imprimir códigos QR de las estaciones</a>
+<a class="qr-link" href="qr/">🖨 Imprimir códigos QR de las estaciones</a>
 {% endblock %}

@@ -1,12 +1,16 @@
-"""HPM web: consulta de mantenimiento preventivo por estación (vía QR).
+"""HPM web: genera el sitio estático (GitHub Pages) de mantenimiento preventivo por estación.
 
-Lee los Excel de ./HPM al arrancar. Ejecutar:  py app.py   ->  http://<ip-del-servidor>:5000
+Lee los Excel de ./HPM y escribe el sitio en ./_site
+    set BASE_URL=https://<usuario>.github.io/<repo>/   (dirección pública, para los QR)
+    py build.py
+    py -m http.server -d _site 8000                     (vista previa local)
 """
 import colorsys
 import hashlib
 import html
 import io
 import os
+import shutil
 import posixpath
 import re
 import textwrap
@@ -18,12 +22,13 @@ from pathlib import Path
 import openpyxl
 import qrcode
 import qrcode.image.svg
-from flask import Flask, Response, abort, render_template, request, url_for
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from PIL import Image
 
 BASE = Path(__file__).parent
 XLSX_DIR = BASE / "HPM"
-FOTOS = BASE / "static" / "fotos"
+OUT = BASE / "_site"
+FOTOS = OUT / "fotos"
 FIRST, LAST = 15, 33  # filas de pasos en cada hoja HPM; la 34 es la leyenda
 COLS = [("n", "AF"), ("punto", "AH"), ("metodo", "AN"), ("norma", "AT"), ("contramedida", "BA"),
         ("hta", "BH"), ("material", "BK"), ("tiempo", "BN"), ("frec", "BP"), ("hora", "BR")]
@@ -34,6 +39,7 @@ A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 X = "{http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing}"
 R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 SHAPES = ("grpSp", "pic", "sp", "cxnSp")
+EMU = 12700  # EMU por punto: el SVG se dibuja en puntos (los navegadores no pintan letras de 139700 px)
 
 
 def slugify(s):
@@ -130,7 +136,7 @@ def paint(el, theme):
     else:
         fill = color(ref("fillRef"), theme)
     ln = sppr.find(A + "ln")
-    width = int(ln.get("w", 12700)) if ln is not None else 12700
+    width = int(ln.get("w", EMU)) / EMU if ln is not None else 1
     if ln is not None and ln.find(A + "noFill") is not None:
         stroke = None
     elif ln is not None and ln.find(A + "solidFill") is not None:
@@ -149,13 +155,13 @@ def text_svg(el, x, y, w, h, theme):
         return ""
     rpr = next(body.iter(A + "rPr"), None)  # Element vacío es falsy: comparar con None, no usar `or`
     rpr = rpr if rpr is not None else next(body.iter(A + "endParaRPr"), None)
-    fs = int(rpr.get("sz", 1100)) / 100 * 12700 if rpr is not None else 1100 / 100 * 12700
+    fs = int(rpr.get("sz", 1100)) / 100 if rpr is not None else 11
     bold = rpr is not None and rpr.get("b") == "1"
     fcol = color(rpr.find(A + "solidFill"), theme) if rpr is not None else None
     style = el.find(X + "style")
     fcol = fcol or color(style.find(A + "fontRef") if style is not None else None, theme) or "#000000"
     bp = body.find(A + "bodyPr")
-    lins, tins = int(bp.get("lIns", 91440)), int(bp.get("tIns", 45720))
+    lins, tins = int(bp.get("lIns", 91440)) / EMU, int(bp.get("tIns", 45720)) / EMU
     ppr = next(body.iter(A + "pPr"), None)
     algn = ppr.get("algn", "l") if ppr is not None else "l"
     # ajuste de línea aproximado: ancho medio de carácter ~0.55 del tamaño de letra
@@ -165,9 +171,9 @@ def text_svg(el, x, y, w, h, theme):
     anchor = bp.get("anchor", "t")
     top = y + h / 2 - total / 2 if anchor == "ctr" else (y + h - tins - total if anchor == "b" else y + tins)
     tx, ta = {"ctr": (x + w / 2, "middle"), "r": (x + w - lins, "end")}.get(algn, (x + lins, "start"))
-    spans = "".join(f'<tspan x="{tx:.0f}" y="{top + fs * (1.2 * i + 0.95):.0f}">{html.escape(s)}</tspan>'
+    spans = "".join(f'<tspan x="{tx:.1f}" y="{top + fs * (1.2 * i + 0.95):.1f}">{html.escape(s)}</tspan>'
                     for i, s in enumerate(lines))
-    return (f'<text font-family="Calibri,Arial,sans-serif" font-size="{fs:.0f}" fill="{fcol}" text-anchor="{ta}"'
+    return (f'<text font-family="Calibri,Arial,sans-serif" font-size="{fs:.1f}" fill="{fcol}" text-anchor="{ta}"'
             f'{' font-weight="bold"' if bold else ""}>{spans}</text>')
 
 
@@ -191,7 +197,7 @@ def save_photo(data, crop):
 
 
 def parse_items(el, tf, theme, media, out):
-    """Aplana una figura (o grupo) a elementos SVG en coordenadas absolutas EMU de la hoja."""
+    """Aplana una figura (o grupo) a elementos SVG en coordenadas absolutas de la hoja, en puntos."""
     ox, oy, sx, sy = tf
     kind = local(el)
     pr = el.find(X + ("grpSpPr" if kind == "grpSp" else "spPr"))
@@ -215,8 +221,8 @@ def parse_items(el, tf, theme, media, out):
     cx, cy = x + w / 2, y + h / 2
     rot = int(xf.get("rot", 0)) / 60000
     fx, fy = (-1 if xf.get("flipH") == "1" else 1), (-1 if xf.get("flipV") == "1" else 1)
-    tr = f' transform="rotate({rot:.2f} {cx:.0f} {cy:.0f}) translate({cx:.0f} {cy:.0f}) scale({fx} {fy}) ' \
-         f'translate({-cx:.0f} {-cy:.0f})"'
+    tr = f' transform="rotate({rot:.2f} {cx:.1f} {cy:.1f}) translate({cx:.1f} {cy:.1f}) scale({fx} {fy}) ' \
+         f'translate({-cx:.1f} {-cy:.1f})"'
     item = {"box": [x, y, x + w, y + h], "nums": [], "pic": kind == "pic"}
 
     if kind == "pic":
@@ -226,8 +232,8 @@ def parse_items(el, tf, theme, media, out):
             return
         src = el.find(f".//{A}srcRect")
         crop = tuple(int(src.get(k, 0)) / 100000 if src is not None else 0 for k in "ltrb")
-        item["svg"] = (f'<image href="/static/fotos/{save_photo(data, crop)}" x="{x:.0f}" y="{y:.0f}" '
-                       f'width="{w:.0f}" height="{h:.0f}" preserveAspectRatio="none"{tr}/>')
+        item["svg"] = (f'<image href="../../fotos/{save_photo(data, crop)}" x="{x:.1f}" y="{y:.1f}" '
+                       f'width="{w:.1f}" height="{h:.1f}" preserveAspectRatio="none"{tr}/>')
     else:
         fill, stroke, sw = paint(el, theme)
         paint_attr = f'fill="{fill or "none"}" stroke="{stroke or "none"}" stroke-width="{sw}"'
@@ -235,7 +241,7 @@ def parse_items(el, tf, theme, media, out):
         prst = geom.get("prst") if geom is not None else "rect"
         if kind == "cxnSp" or "Connector" in prst or prst == "line":
             # línea de esquina a esquina; punta de flecha si el Excel la tiene
-            shape = f'<line x1="{x:.0f}" y1="{y:.0f}" x2="{x + w:.0f}" y2="{y + h:.0f}" stroke="{stroke or "#000"}" stroke-width="{sw}"/>'
+            shape = f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{x + w:.1f}" y2="{y + h:.1f}" stroke="{stroke or "#000"}" stroke-width="{sw}"/>'
             ln = el.find(f"{X}spPr/{A}ln")
             for end, (ex, ey, bx, by) in (("tailEnd", (x + w, y + h, x, y)), ("headEnd", (x, y, x + w, y + h))):
                 e = ln.find(A + end) if ln is not None else None
@@ -244,27 +250,27 @@ def parse_items(el, tf, theme, media, out):
                     ux, uy, s = (ex - bx) / L, (ey - by) / L, sw * 4
                     pts = [(ex, ey), (ex - ux * s - uy * s / 2, ey - uy * s + ux * s / 2),
                            (ex - ux * s + uy * s / 2, ey - uy * s - ux * s / 2)]
-                    shape += f'<polygon points="{" ".join(f"{a:.0f},{b:.0f}" for a, b in pts)}" fill="{stroke or "#000"}"/>'
+                    shape += f'<polygon points="{" ".join(f"{a:.1f},{b:.1f}" for a, b in pts)}" fill="{stroke or "#000"}"/>'
         elif prst == "upArrow":
             a = min(w / 2, h)  # cabeza de la flecha
             pts = [(cx, y), (x + w, y + a), (x + w * .75, y + a), (x + w * .75, y + h), (x + w * .25, y + h),
                    (x + w * .25, y + a), (x, y + a)]
-            shape = f'<polygon points="{" ".join(f"{p:.0f},{q:.0f}" for p, q in pts)}" {paint_attr}/>'
+            shape = f'<polygon points="{" ".join(f"{p:.1f},{q:.1f}" for p, q in pts)}" {paint_attr}/>'
         elif prst == "wedgeRectCallout":
             adj = {g.get("name"): int(g.get("fmla").split()[-1]) for g in geom.iter(A + "gd")}
             tipx = cx + adj.get("adj1", -20833) / 100000 * w
             tipy = cy + adj.get("adj2", 62500) / 100000 * h
             d = max(min(w, h) * 0.25, 1)
-            shape = (f'<polygon points="{tipx:.0f},{tipy:.0f} {cx - d:.0f},{cy:.0f} {cx + d:.0f},{cy:.0f}" {paint_attr}/>'
-                     f'<rect x="{x:.0f}" y="{y:.0f}" width="{w:.0f}" height="{h:.0f}" {paint_attr}/>'
-                     f'<rect x="{x + sw:.0f}" y="{y + sw:.0f}" width="{max(w - 2 * sw, 0):.0f}" height="{max(h - 2 * sw, 0):.0f}" '
+            shape = (f'<polygon points="{tipx:.1f},{tipy:.1f} {cx - d:.1f},{cy:.1f} {cx + d:.1f},{cy:.1f}" {paint_attr}/>'
+                     f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" {paint_attr}/>'
+                     f'<rect x="{x + sw:.1f}" y="{y + sw:.1f}" width="{max(w - 2 * sw, 0):.1f}" height="{max(h - 2 * sw, 0):.1f}" '
                      f'fill="{fill or "none"}"/>')  # tapa la base del triángulo
             item["box"] = [min(x, tipx), min(y, tipy), max(x + w, tipx), max(y + h, tipy)]
             label = "".join(t.text or "" for t in el.iter(A + "t"))
             for a_, b_, n in re.findall(r"(\d+)\s*~\s*(\d+)|(\d+)", label):
                 item["nums"] += list(range(int(a_), int(b_) + 1)) if a_ else [int(n)]
         else:  # rect y cualquier otra forma: rectángulo
-            shape = f'<rect x="{x:.0f}" y="{y:.0f}" width="{w:.0f}" height="{h:.0f}" {paint_attr}/>'
+            shape = f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" {paint_attr}/>'
         item["svg"] = f"<g{tr}>{shape}{text_svg(el, x, y, w, h, theme)}</g>"
     out.append(item)
 
@@ -276,7 +282,7 @@ def sheet_figures(root, media, theme):
         items = []
         for c in anchor:
             if local(c) in SHAPES:
-                parse_items(c, (0, 0, 1, 1), theme, media, items)
+                parse_items(c, (0, 0, 1 / EMU, 1 / EMU), theme, media, items)
         if any(i["pic"] for i in items):
             figs.append(items)
         else:
@@ -295,7 +301,7 @@ def sheet_figures(root, media, theme):
     for f in figs:
         x0, y0, x1, y1 = box(f)
         pad = max(x1 - x0, y1 - y0) * 0.02
-        svg = (f'<svg class="fig" viewBox="{x0 - pad:.0f} {y0 - pad:.0f} {x1 - x0 + 2 * pad:.0f} {y1 - y0 + 2 * pad:.0f}" '
+        svg = (f'<svg class="fig" viewBox="{x0 - pad:.1f} {y0 - pad:.1f} {x1 - x0 + 2 * pad:.1f} {y1 - y0 + 2 * pad:.1f}" '
                f'xmlns="http://www.w3.org/2000/svg" role="img">{"".join(i["svg"] for i in f)}</svg>')
         result.append({"svg": svg, "nums": sorted({n for i in f for n in i["nums"]})})
     return result
@@ -334,43 +340,32 @@ def load_machine(path):
             "total": sum(len(s["pasos"]) for s in sections)}
 
 
-FOTOS.mkdir(parents=True, exist_ok=True)
-MACHINES = {m["slug"]: m for m in (load_machine(p) for p in sorted(XLSX_DIR.glob("*.xlsx"))
-                                   if not p.name.startswith("~$"))}
+def build():
+    shutil.rmtree(OUT, ignore_errors=True)
+    FOTOS.mkdir(parents=True)
+    machines = [load_machine(p) for p in sorted(XLSX_DIR.glob("*.xlsx")) if not p.name.startswith("~$")]
+    base_url = os.environ.get("BASE_URL", "").rstrip("/")
+    env = Environment(loader=FileSystemLoader(BASE / "templates"), autoescape=select_autoescape())
 
-app = Flask(__name__)
+    def write(rel, text):
+        f = OUT / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
 
-
-def station_url(slug):
-    # BASE_URL: dirección que los teléfonos usan para llegar al servidor (ej. http://10.0.0.5:5000)
-    base = os.environ.get("BASE_URL")
-    path = url_for("estacion", slug=slug)
-    return base.rstrip("/") + path if base else request.host_url.rstrip("/") + path
-
-
-@app.route("/")
-def index():
-    return render_template("index.html", machines=MACHINES.values())
-
-
-@app.route("/estacion/<slug>")
-def estacion(slug):
-    m = MACHINES.get(slug) or abort(404)
-    return render_template("estacion.html", m=m)
-
-
-@app.route("/qr/<slug>.svg")
-def qr_svg(slug):
-    if slug not in MACHINES:
-        abort(404)
-    img = qrcode.make(station_url(slug), image_factory=qrcode.image.svg.SvgPathImage, box_size=20, border=2)
-    return Response(img.to_string(), mimetype="image/svg+xml")
-
-
-@app.route("/qr")
-def qr_page():
-    return render_template("qr.html", machines=MACHINES.values(), url=station_url)
+    write("index.html", env.get_template("index.html").render(machines=machines))
+    for m in machines:
+        write(f"estacion/{m['slug']}/index.html", env.get_template("estacion.html").render(m=m))
+        m["url"] = f"{base_url}/estacion/{m['slug']}/"
+        if base_url:
+            img = qrcode.make(m["url"], image_factory=qrcode.image.svg.SvgPathImage, box_size=20, border=2)
+            write(f"qr/{m['slug']}.svg", img.to_string().decode())
+    write("qr/index.html", env.get_template("qr.html").render(machines=machines, base_url=base_url))
+    write(".nojekyll", "")  # GitHub Pages: servir tal cual, sin Jekyll
+    return machines
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    for m in build():
+        print(f"{m['slug']}: {len(m['secciones'])} secciones, {m['total']} pasos, {len(m['figuras'])} imágenes")
+    print(f"Sitio generado en {OUT}" + ("" if os.environ.get("BASE_URL") else
+          "  (sin BASE_URL: no se generaron los QR)"))

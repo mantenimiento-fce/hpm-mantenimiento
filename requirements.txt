@@ -1,4 +1,4 @@
-flask
 openpyxl
 pillow
 qrcode
+jinja2
