@@ -15,6 +15,7 @@ for m in machines:
     for f in m["figuras"]:  # cada imagen trae sus números dibujados y aparece en esos pasos
         assert f["nums"] and "<tspan" in f["svg"], (m["slug"], f["nums"])
         assert any(f["svg"] in p["figs"] for p in pasos), (m["slug"], f["nums"])
+        assert ">~</tspan>" not in f["svg"], (m["slug"], f["nums"])  # los rangos no se parten en renglones
         for size in re.findall(r'font-size="([\d.]+)"', f["svg"]):
             assert float(size) < 100, size  # en puntos; tamaños enormes no se pintan en el navegador
         for src in re.findall(r'href="\.\./\.\./(fotos/[^"]+)"', f["svg"]):

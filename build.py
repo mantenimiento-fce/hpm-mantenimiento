@@ -164,11 +164,18 @@ def text_svg(el, x, y, w, h, theme):
     lins, tins = int(bp.get("lIns", 91440)) / EMU, int(bp.get("tIns", 45720)) / EMU
     ppr = next(body.iter(A + "pPr"), None)
     algn = ppr.get("algn", "l") if ppr is not None else "l"
-    # ajuste de línea aproximado: ancho medio de carácter ~0.55 del tamaño de letra
-    per_line = max(1, int((w - 2 * lins) / (fs * 0.55)))
-    lines = [ln for p in paras for ln in (textwrap.wrap(p.strip(), per_line, break_long_words=False) or [""])]
-    total = fs * 1.2 * len(lines)
     anchor = bp.get("anchor", "t")
+    geom = el.find(f"{X}spPr/{A}prstGeom")
+    if geom is not None and geom.get("prst") == "wedgeRectCallout":
+        # número(s) de paso ("21 ~ 23"): una línea centrada, reducida solo si no cabe en el recuadro
+        label = " ".join(p.strip() for p in paras if p.strip())
+        fs = min(fs, w * 0.92 / (len(label) * 0.5))
+        lines, anchor, algn = [label], "ctr", "ctr"
+    else:
+        # ajuste de línea aproximado: ancho medio de carácter ~0.55 del tamaño de letra
+        per_line = max(1, int((w - 2 * lins) / (fs * 0.55)))
+        lines = [ln for p in paras for ln in (textwrap.wrap(p.strip(), per_line, break_long_words=False) or [""])]
+    total = fs * 1.2 * len(lines)
     top = y + h / 2 - total / 2 if anchor == "ctr" else (y + h - tins - total if anchor == "b" else y + tins)
     tx, ta = {"ctr": (x + w / 2, "middle"), "r": (x + w - lins, "end")}.get(algn, (x + lins, "start"))
     spans = "".join(f'<tspan x="{tx:.1f}" y="{top + fs * (1.2 * i + 0.95):.1f}">{html.escape(s)}</tspan>'
