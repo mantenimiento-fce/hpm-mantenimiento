@@ -25,6 +25,8 @@ jobs:
           python-version: "3.12"
       - id: pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - run: pip install -r requirements.txt
       - run: python test_build.py
       - run: python build.py
