@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b2c4d">
+<title>{% block title %}HPM Mantenimiento{% endblock %}</title>
+<style>
+  :root {
+    --navy: #0b2c4d; --navy2: #14406b; --blue: #1f6fb2; --bg: #eef2f6; --card: #ffffff;
+    --ink: #17212b; --muted: #5b6875; --line: #d5dde5;
+    --green: #1e8e3e; --red: #c62828; --amber: #f2a900; --chip: #e3ecf5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  a { color: var(--blue); }
+  header.top { background: var(--navy); color: #fff; padding: 14px 16px; position: sticky; top: 0; z-index: 10;
+               box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+  header.top .wrap { display: flex; align-items: center; gap: 12px; }
+  header.top a.home { color: #fff; text-decoration: none; font-weight: 800; background: var(--blue);
+                      padding: 6px 10px; border-radius: 8px; font-size: 14px; white-space: nowrap; }
+  header.top h1 { font-size: 18px; margin: 0; line-height: 1.2; }
+  header.top small { display: block; opacity: .8; font-weight: 400; font-size: 13px; }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  main { padding: 16px; }
+  .card { background: var(--card); border-radius: 12px; border: 1px solid var(--line); }
+  .muted { color: var(--muted); }
+  footer { text-align: center; color: var(--muted); font-size: 13px; padding: 24px 16px; }
+  @media print { header.top { position: static; } }
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+<header class="top"><div class="wrap">
+  {% block nav %}{% endblock %}
+  <h1>{% block heading %}HPM · Mantenimiento Preventivo{% endblock %}</h1>
+</div></header>
+<main class="wrap">{% block content %}{% endblock %}</main>
+<footer>Hojas de Mantenimiento Preventivo (HPM) · Departamento de Mantenimiento</footer>
+</body>
+</html>

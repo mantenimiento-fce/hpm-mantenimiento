@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block head %}
+<style>
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  a.station { display: block; text-decoration: none; color: var(--ink); padding: 18px; border-left: 8px solid var(--blue); }
+  a.station:active, a.station:hover { background: var(--chip); }
+  a.station h2 { margin: 0 0 6px; font-size: 20px; color: var(--navy); }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .stats span { background: var(--chip); color: var(--navy); font-weight: 700; font-size: 13px; padding: 4px 10px; border-radius: 99px; }
+  .qr-link { display: inline-block; margin-top: 20px; font-weight: 700; }
+</style>
+{% endblock %}
+{% block content %}
+<p class="muted">Seleccione la estación para consultar su hoja de mantenimiento preventivo.</p>
+<div class="grid">
+  {% for m in machines %}
+  <a class="card station" href="{{ url_for('estacion', slug=m.slug) }}">
+    <h2>{{ m.info.equipo }}</h2>
+    <div class="muted">Cliente {{ m.info.cliente }} · Línea {{ m.info.linea }}</div>
+    <div class="stats"><span>{{ m.secciones|length }} secciones</span><span>{{ m.total }} puntos</span></div>
+  </a>
+  {% endfor %}
+</div>
+<a class="qr-link" href="{{ url_for('qr_page') }}">🖨 Imprimir códigos QR de las estaciones</a>
+{% endblock %}

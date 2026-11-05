@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Códigos QR · HPM{% endblock %}
+{% block nav %}<a class="home" href="{{ url_for('index') }}">← Inicio</a>{% endblock %}
+{% block heading %}Códigos QR de estaciones{% endblock %}
+{% block head %}
+<style>
+  .qrs { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .qr { padding: 16px; text-align: center; border: 3px solid var(--navy); break-inside: avoid; }
+  .qr img { width: 100%; max-width: 220px; }
+  .qr h2 { margin: 6px 0 2px; color: var(--navy); font-size: 18px; }
+  .qr small { word-break: break-all; color: var(--muted); }
+  @media print { .noprint { display: none; } body { background: #fff; } }
+</style>
+{% endblock %}
+{% block content %}
+<p class="noprint muted">Verifique que la dirección debajo de cada QR sea accesible desde los teléfonos (no "localhost").
+  <button onclick="print()">Imprimir</button></p>
+<div class="qrs">
+  {% for m in machines %}
+  <div class="card qr">
+    <img src="{{ url_for('qr_svg', slug=m.slug) }}" alt="QR {{ m.info.equipo }}">
+    <h2>{{ m.info.equipo }}</h2>
+    <div>HPM · Mantenimiento preventivo</div>
+    <small>{{ url(m.slug) }}</small>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
