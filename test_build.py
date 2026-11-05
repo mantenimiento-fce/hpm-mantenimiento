@@ -25,7 +25,8 @@ for m in machines:
     page = (OUT / "estacion" / m["slug"] / "index.html").read_text(encoding="utf-8")
     assert m["secciones"][0]["nombre"] in page and "Inicio" not in page
     assert "Consulta sobre hpm" in page and "GERENTE" not in page and "COORDINADOR" not in page
-    assert (OUT / "qr" / f"{m['slug']}.svg").read_text().startswith("<svg")
+    qr = (OUT / "qr" / f"{m['slug']}.svg").read_text()
+    assert qr.startswith("<svg") and "data:image/png;base64," in qr  # logo incrustado: <img> no carga archivos externos
     print(f"OK {m['slug']}: {len(nums)} pasos, {len(m['figuras'])} imágenes")
 
 # consulta: [estación, pregunta, número de paso entre los primeros 5 o texto que debe traer la respuesta]

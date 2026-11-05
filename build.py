@@ -5,6 +5,7 @@ Lee los Excel de ./HPM y escribe el sitio en ./_site
     py build.py
     py -m http.server -d _site 8000                     (vista previa local)
 """
+import base64
 import colorsys
 import hashlib
 import html
@@ -22,7 +23,6 @@ from pathlib import Path
 
 import openpyxl
 import qrcode
-import qrcode.image.svg
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from PIL import Image
 
@@ -40,6 +40,7 @@ A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 X = "{http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing}"
 R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 SHAPES = ("grpSp", "pic", "sp", "cxnSp")
+AZUL_LOGO = "#0023c9"
 EMU = 12700  # EMU por punto: el SVG se dibuja en puntos (los navegadores no pintan letras de 139700 px)
 
 
@@ -348,6 +349,23 @@ def load_machine(path):
             "total": sum(len(s["pasos"]) for s in sections)}
 
 
+def qr_svg(url):
+    """QR en el azul del logo, con el logo al centro; la corrección H compensa los módulos del hueco."""
+    q = qrcode.QRCode(error_correction=qrcode.ERROR_CORRECT_H, border=2)
+    q.add_data(url)
+    q.make(fit=True)
+    m = q.get_matrix()
+    n, c, k = len(m), len(m) // 2, round(len(m) * .13)  # el hueco ocupa ~7% del área: H recupera 30%
+    # módulos cuadrados a propósito: redondear módulos u ojos hizo fallar a lectores (OpenCV) que sí leen este
+    d = "".join(f"M{x} {y}h1v1h-1z" for y in range(n) for x in range(n)
+                if m[y][x] and not (abs(x - c) <= k and abs(y - c) <= k))
+    logo = base64.b64encode((BASE / "templates" / "logo.png").read_bytes()).decode()
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {n} {n}">'
+            f'<path fill="{AZUL_LOGO}" shape-rendering="crispEdges" d="{d}"/>'
+            f'<image x="{c - k + 1}" y="{c - k + 1}" width="{2 * k - 1}" height="{2 * k - 1}" '
+            f'href="data:image/png;base64,{logo}"/></svg>')
+
+
 def build():
     shutil.rmtree(OUT, ignore_errors=True)
     FOTOS.mkdir(parents=True)
@@ -365,8 +383,7 @@ def build():
         write(f"estacion/{m['slug']}/index.html", env.get_template("estacion.html").render(m=m))
         m["url"] = f"{base_url}/estacion/{m['slug']}/"
         if base_url:
-            img = qrcode.make(m["url"], image_factory=qrcode.image.svg.SvgPathImage, box_size=20, border=2)
-            write(f"qr/{m['slug']}.svg", img.to_string().decode())
+            write(f"qr/{m['slug']}.svg", qr_svg(m["url"]))
     write("qr/index.html", env.get_template("qr.html").render(machines=machines, base_url=base_url))
     shutil.copy(BASE / "templates" / "asistente.js", OUT / "asistente.js")
     # datos de la consulta sobre hpm: un solo archivo para buscar por estación o en todas
