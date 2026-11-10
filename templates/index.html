@@ -1,25 +1,72 @@
 {% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% set raiz = "" %}
 {% block head %}
 <style>
-  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-  a.station { display: block; text-decoration: none; color: var(--ink); padding: 18px; border-left: 8px solid var(--blue); }
-  a.station:active, a.station:hover { background: var(--chip); }
-  a.station h2 { margin: 0 0 6px; font-size: 20px; color: var(--navy); }
-  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-  .stats span { background: var(--chip); color: var(--navy); font-weight: 700; font-size: 13px; padding: 4px 10px; border-radius: 99px; }
-  .qr-link { display: inline-block; margin-top: 20px; font-weight: 700; }
+  .intro { padding: var(--sp-5) 0 var(--sp-6); }
+  .intro h1 { font-size: var(--fs-2xl); margin: var(--sp-2) 0 var(--sp-3); max-width: 20ch; }
+  .intro p.lead { max-width: var(--measure); color: var(--c-muted); }
+
+  .portada { display: grid; gap: var(--sp-6); align-items: start; }
+  @media (min-width: 900px) { .portada { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--sp-7); }
+                              .portada aside { position: sticky; top: calc(var(--header-h) + var(--sp-5)); } }
+
+  .bloque-t { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: var(--sp-2);
+              border-bottom: 2px solid var(--c-ink); }
+  .bloque-t h2 { font-size: var(--fs-lg); }
+
+  .estaciones { list-style: none; margin: 0; padding: 0; counter-reset: est; }
+  .estaciones li { counter-increment: est; border-bottom: 1px solid var(--c-line); }
+  .estaciones a { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--sp-4);
+                  padding: var(--sp-4) var(--sp-2); min-height: 80px; color: inherit; text-decoration: none;
+                  transition: background-color var(--dur) var(--ease); }
+  .estaciones a::before { content: counter(est, decimal-leading-zero); font: 600 var(--fs-md)/1 var(--font-display);
+                          color: var(--c-muted); font-variant-numeric: tabular-nums; }
+  .estaciones h3 { font-size: var(--fs-xl); transition: color var(--dur) var(--ease); }
+  .estaciones p { font-size: var(--fs-sm); color: var(--c-muted); margin-top: var(--sp-1); }
+  .estaciones .icon { color: var(--c-blue); transition: transform var(--dur) var(--ease); }
+  .estaciones a:hover { background: var(--c-blue-tint); }
+  .estaciones a:hover h3 { color: var(--c-blue); }
+  .estaciones a:hover .icon { transform: translateX(var(--sp-1)); }
+
+  .herramientas { margin-top: var(--sp-5); }
+  .admin-link { padding-top: var(--sp-5); border-top: 1px solid var(--c-line); }
+  .admin-link .btn { padding-left: 0; padding-right: var(--sp-3); }
+  .herramientas p { font-size: var(--fs-sm); color: var(--c-muted); margin-top: var(--sp-2); }
 </style>
 {% endblock %}
 {% block content %}
-{% with raiz="", estacion="" %}{% include "_consulta.html" %}{% endwith %}
-<p class="muted">Seleccione la estación para consultar su hoja de mantenimiento preventivo.</p>
-<div class="grid">
-  {% for m in machines %}
-  <a class="card station" href="estacion/{{ m.slug }}/">
-    <h2>{{ m.info.equipo }}</h2>
-    <div class="stats"><span>{{ m.secciones|length }} secciones</span><span>{{ m.total }} puntos</span></div>
-  </a>
-  {% endfor %}
+<div class="wrap">
+  <section class="intro">
+    <p class="eyebrow">Departamento de Mantenimiento</p>
+    <h1>Hojas de mantenimiento preventivo</h1>
+    <p class="lead">Seleccione la estación para consultar su hoja HPM: pasos, criterios, contramedidas e imágenes de cada punto.</p>
+  </section>
+
+  <div class="portada">
+    <section aria-labelledby="est-t">
+      <div class="bloque-t"><h2 id="est-t">Estaciones</h2><span class="eyebrow">{{ machines|length }} en total</span></div>
+      <ol class="estaciones">
+        {% for m in machines %}
+        <li><a href="estacion/{{ m.slug }}/">
+          <div><h3 class="nombre-estacion">{{ m.info.equipo }}</h3><p>{{ m.secciones|length }} secciones · {{ m.total }} puntos{% if m.efectos %} · {{ m.efectos|length }} efectos de falla{% endif %}</p></div>
+          {{ icono("arrow-right") }}
+        </a></li>
+        {% endfor %}
+      </ol>
+      <div class="herramientas">
+        <a class="btn btn-secondary" href="qr/">{{ icono("qr") }} Imprimir códigos QR</a>
+        <p>Etiquetas para pegar en cada estación; al escanearlas abren su hoja.</p>
+      </div>
+      <div class="herramientas admin-link">
+        <a class="btn btn-ghost" href="admin/">{{ icono("settings") }} Administrador de troubleshooting</a>
+        <p>Provisional: para capturar efectos y causas mientras se completa la información.</p>
+      </div>
+    </section>
+
+    <aside>
+      {% with raiz="", estacion="" %}{% include "_consulta.html" %}{% endwith %}
+    </aside>
+  </div>
 </div>
-<a class="qr-link" href="qr/">🖨 Imprimir códigos QR de las estaciones</a>
 {% endblock %}

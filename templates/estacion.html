@@ -1,115 +1,196 @@
 {% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% set raiz = "../../" %}
+{# presentación de los valores del Excel; los datos no cambian #}
+{% macro v(x) %}{{ x if x.strip("-_ ") else "—" }}{% endmacro %}
+{% macro frec(x) %}{% if x == "1" %}Cada semana{% elif x.isdigit() %}Cada {{ x }} semanas{% elif x.strip("-_ ") %}{{ x|capitalize }}{% else %}—{% endif %}{% endmacro %}
+{% macro tiempo(x) %}{% if x.isdigit() %}{{ x }} min{% else %}{{ v(x) }}{% endif %}{% endmacro %}
+{% macro hora(x) %}{{ {"ON": "Equipo funcionando", "OFF": "Equipo parado", "ON/OFF": "Funcionando o parado"}.get(x, v(x)) }}{% endmacro %}
 {% block title %}HPM · {{ m.info.equipo }}{% endblock %}
-{% block nav %}<button class="menu-btn" type="button" onclick="toggleMenu()" aria-label="Secciones">☰</button>{% endblock %}
-{% block heading %}{{ m.info.equipo }}<small>Mantenimiento preventivo · {{ m.total }} puntos</small>{% endblock %}
+{% block cabecera %}
+<a class="btn btn-ghost btn-icon" href="../../" aria-label="Estaciones" title="Estaciones">{{ icono("arrow-left") }}</a>
+<div class="top-titulo"><h1 class="nombre-estacion">{{ m.info.equipo }}</h1><p>Mantenimiento preventivo · {{ m.total }} puntos</p></div>
+<div class="top-acciones">
+  {% if m.efectos %}<a class="btn btn-secondary" href="troubleshooting/" title="Troubleshooting">{{ icono("stethoscope") }}<span class="btn-txt">Troubleshooting</span></a>{% endif %}
+  <button class="btn btn-secondary menu-btn" type="button" aria-controls="menu" aria-expanded="false" onclick="toggleMenu()">
+    {{ icono("menu") }}<span class="btn-txt">Secciones</span></button>
+</div>
+{% endblock %}
 {% block head %}
 <style>
-  .menu-btn { font-size: 22px; line-height: 1; padding: 8px 12px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; }
+  @media (min-width: 720px) { .top-acciones .btn { padding: 0 var(--sp-3); } }
 
-  /* menú lateral izquierdo de secciones */
-  #menu { position: fixed; top: 0; left: 0; bottom: 0; width: 290px; max-width: 85vw; background: var(--navy); color: #fff;
-          overflow-y: auto; z-index: 30; transform: translateX(-100%); transition: transform .2s; padding-bottom: 24px; }
-  #menu.open { transform: none; }
-  #menu .mh { padding: 16px; font-weight: 800; border-bottom: 1px solid rgba(255,255,255,.2); display: flex; justify-content: space-between; align-items: center; }
-  #menu .mh button { color: #fff; background: none; border: 0; font-size: 22px; cursor: pointer; }
-  #menu a.s { display: block; color: #fff; text-decoration: none; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 15px; }
-  #menu a.s small { display: block; opacity: .7; font-size: 12px; }
-  #menu a.s:active, #menu a.s:hover { background: var(--navy2); }
-  #shade { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 25; display: none; }
+  /* menú lateral de secciones */
+  #menu { position: fixed; top: 0; left: 0; bottom: 0; z-index: 30; width: var(--drawer-w); max-width: 85vw;
+          background: var(--c-surface); border-right: 1px solid var(--c-line); overflow-y: auto; visibility: hidden;
+          transform: translateX(-100%); transition: transform var(--dur) var(--ease), visibility 0s linear var(--dur); }
+  #menu.open { transform: none; visibility: visible; transition-delay: 0s; box-shadow: var(--sh-2); }
+  #menu .mh { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between;
+              min-height: var(--header-h); padding: 0 var(--sp-2) 0 var(--sp-4); background: var(--c-surface); border-bottom: 1px solid var(--c-line); }
+  #menu .mh h2 { font-size: var(--fs-lg); }
+  #menu ol { list-style: none; margin: 0; padding: var(--sp-2) 0 var(--sp-5); }
+  #menu a.s { display: block; padding: var(--sp-3) var(--sp-4); border-left: 3px solid transparent; color: var(--c-text);
+              text-decoration: none; font-size: var(--fs-sm); line-height: var(--lh-snug);
+              transition: background-color var(--dur) var(--ease); }
+  #menu a.s small { display: block; margin-top: 2px; font-size: var(--fs-xs); color: var(--c-muted); }
+  #menu a.s:hover { background: var(--c-blue-tint); }
+  #menu a.s[aria-current] { border-left-color: var(--c-blue); background: var(--c-blue-tint); color: var(--c-ink); font-weight: 600; }
+  #menu a.s:focus-visible { outline-offset: -3px; }
+  #shade { position: fixed; inset: 0; z-index: 25; background: var(--c-scrim); display: none; }
   #shade.open { display: block; }
   /* pantalla grande: el menú empuja el contenido en vez de taparlo, y se puede ocultar */
-  @media (min-width: 1000px) {
+  @media (min-width: 1100px) {
     #shade { display: none !important; }
-    body { transition: padding-left .2s; }
-    body.menu-open { padding-left: 290px; }
+    #menu.open { box-shadow: none; }
+    body { transition: padding-left var(--dur) var(--ease); }
+    body.menu-open { padding-left: var(--drawer-w); }
   }
 
-  h2.sec { background: var(--navy2); color: #fff; margin: 24px 0 10px; padding: 10px 14px; border-radius: 10px; font-size: 17px;
-           scroll-margin-top: 80px; }
+  .estacion { max-width: 880px; }
+  .estacion > .consulta { margin-bottom: var(--sp-6); }
+  .ts-acceso { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--sp-4); margin-bottom: var(--sp-4);
+               padding: var(--sp-4); color: inherit; text-decoration: none; border-left: 4px solid var(--c-amber);
+               transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease); }
+  .ts-acceso:hover { background: var(--c-amber-tint); }
+  .ts-acceso > .icon:first-child { width: 28px; height: 28px; color: var(--c-amber-ink); }
+  .ts-acceso b { display: block; font: 700 var(--fs-lg)/var(--lh-tight) var(--font-display); color: var(--c-ink); }
+  .ts-acceso span { font-size: var(--fs-sm); color: var(--c-muted); }
+  .ts-acceso > .icon:last-child { color: var(--c-blue); transition: transform var(--dur) var(--ease); }
+  .ts-acceso:hover > .icon:last-child { transform: translateX(var(--sp-1)); }
 
-  .paso { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; overflow: hidden; scroll-margin-top: 80px; }
-  .paso .h { display: flex; gap: 12px; align-items: center; padding: 10px 12px; background: var(--chip); }
-  .paso .n { flex: none; min-width: 40px; height: 40px; border-radius: 10px; background: var(--blue); color: #fff;
-             display: grid; place-items: center; font-weight: 800; font-size: 18px; }
-  .paso .punto { font-weight: 800; color: var(--navy); }
-  table.f { width: 100%; border-collapse: collapse; font-size: 15px; }
-  table.f th { text-align: left; vertical-align: top; width: 38%; max-width: 170px; padding: 7px 12px; font-size: 12px;
-               color: var(--muted); font-weight: 700; border-top: 1px solid var(--line); }
-  table.f td { padding: 7px 12px 7px 0; border-top: 1px solid var(--line); }
-  table.f tr.contra td, table.f tr.contra th { background: #fff8e1; }
 
-  .figs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
-  .figs button { padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: zoom-in; }
+  .paso { margin-bottom: var(--sp-4); overflow: hidden; transition: box-shadow var(--dur) var(--ease); }
+  .paso:target { box-shadow: 0 0 0 3px var(--c-amber); }
+  .paso-h { display: flex; gap: var(--sp-3); align-items: center; padding: var(--sp-4); }
+  .paso-h h3 { font: 600 var(--fs-md)/var(--lh-snug) var(--font-body); }
+
+  dl { margin: 0; }
+  dt { font-size: var(--fs-xs); font-weight: 600; letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--c-muted); }
+  dd { margin: 2px 0 0; max-width: var(--measure); }
+  .paso-campos { display: grid; gap: var(--sp-4); padding: 0 var(--sp-4) var(--sp-4); }
+  .contra { padding: var(--sp-3); border-left: 4px solid var(--c-amber); border-radius: var(--r-sm); background: var(--c-amber-tint); }
+  .contra dt { display: flex; align-items: center; gap: var(--sp-2); color: var(--c-amber-ink); }
+  .contra dt .icon { width: 16px; height: 16px; }
+
+  .paso-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-4);
+               padding: var(--sp-4); background: var(--c-sunk); border-top: 1px solid var(--c-line); }
+  .paso-meta > div { min-width: 0; }
+  .paso-meta dt { display: flex; align-items: center; gap: var(--sp-1); }
+  .paso-meta dt .icon { width: 14px; height: 14px; }
+  .paso-meta dd { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+  .paso-meta .ancho { grid-column: 1 / -1; }
+  @media (min-width: 640px) { .paso-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); } .paso-meta .ancho { grid-column: auto; } }
+
+  .figs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-2); padding: var(--sp-4); border-top: 1px solid var(--c-line); }
+  .figs button { position: relative; padding: var(--sp-1); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface);
+                 cursor: zoom-in; transition: border-color var(--dur) var(--ease); }
+  .figs button:hover { border-color: var(--c-blue); }
+  .figs button .icon { position: absolute; right: var(--sp-2); bottom: var(--sp-2); width: 32px; height: 32px; padding: 6px;
+                       border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-ink); box-shadow: var(--sh-1); }
   svg.fig { width: 100%; height: auto; display: block; }
   .figs svg.fig { max-height: 260px; }
 
   /* imagen ampliada */
-  #zoom { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.92); display: none; overflow: auto; padding: 50px 8px 8px; }
+  #zoom { position: fixed; inset: 0; z-index: 40; background: var(--c-scrim-strong); display: none; overflow: auto; padding: 64px var(--sp-2) var(--sp-2); }
   #zoom.open { display: block; }
-  #zoom .box { background: #fff; border-radius: 8px; padding: 6px; max-width: 1200px; margin: 0 auto; }
+  #zoom .box { background: var(--c-surface); border-radius: var(--r-md); padding: var(--sp-2); max-width: 1200px; margin: 0 auto; }
   #zoom svg.fig { max-height: none; }
-  #zoom .x { position: fixed; top: 8px; right: 12px; font-size: 28px; color: #fff; background: none; border: 0; cursor: pointer; }
+  #zoom .x { position: fixed; top: var(--sp-2); right: var(--sp-2); }
 
-  .leyenda { padding: 12px 16px; font-size: 14px; margin-top: 16px; }
-
-  .paso:target { outline: 3px solid var(--amber); }
+  .leyenda { display: flex; gap: var(--sp-3); margin-top: var(--sp-6); padding: var(--sp-4); font-size: var(--fs-sm); color: var(--c-muted); }
+  .leyenda .icon { color: var(--c-ink); }
 </style>
 {% endblock %}
 {% block content %}
-<nav id="menu" aria-label="Secciones">
-  <div class="mh">SECCIÓN / PARTE <button type="button" onclick="toggleMenu(false)" aria-label="Ocultar menú">✕</button></div>
+<nav id="menu" aria-labelledby="menu-t">
+  <div class="mh"><h2 id="menu-t">Secciones</h2>
+    <button class="btn btn-ghost btn-icon" type="button" onclick="toggleMenu(false)" aria-label="Ocultar menú">{{ icono("x") }}</button></div>
+  <ol>
   {% for s in m.secciones %}
-  <a class="s" href="#{{ s.id }}" onclick="if(!wide())toggleMenu(false)">{{ s.nombre }}
-    <small>N° {{ s.pasos[0].n }}{% if s.pasos|length > 1 %} – {{ s.pasos[-1].n }}{% endif %}</small></a>
+  <li><a class="s" href="#{{ s.id }}" onclick="if(!wide())toggleMenu(false)">{{ s.nombre }}
+    <small>N° {{ s.pasos[0].n }}{% if s.pasos|length > 1 %} – {{ s.pasos[-1].n }}{% endif %}</small></a></li>
   {% endfor %}
+  </ol>
 </nav>
 <div id="shade" onclick="toggleMenu(false)"></div>
 
-{% with raiz="../../", estacion=m.slug %}{% include "_consulta.html" %}{% endwith %}
+<div class="wrap estacion">
+{% if m.efectos %}
+<a class="panel ts-acceso" href="troubleshooting/">{{ icono("stethoscope") }}
+  <div><b>Troubleshooting</b><span>{{ m.efectos|length }} efectos de falla con sus posibles causas</span></div>{{ icono("arrow-right") }}</a>
+{% endif %}
+{% with raiz="../../", estacion=m.slug, nombre=m.info.equipo %}{% include "_consulta.html" %}{% endwith %}
 
 {% for s in m.secciones %}
-<h2 class="sec" id="{{ s.id }}">{{ s.nombre }}</h2>
+<section aria-labelledby="{{ s.id }}">
+<h2 class="sec" id="{{ s.id }}">{{ s.nombre }}<small>N° {{ s.pasos[0].n }}{% if s.pasos|length > 1 %}–{{ s.pasos[-1].n }}{% endif %}</small></h2>
 {% for p in s.pasos %}
-<article class="paso" id="paso-{{ p.n }}">
-  <div class="h"><div class="n">{{ p.n }}</div><div class="punto">{{ p.punto }}</div></div>
-  <table class="f">
-    <tr><th>METODO</th><td>{{ p.metodo }}</td></tr>
-    <tr><th>NORMA / CRITERIO</th><td>{{ p.norma }}</td></tr>
-    <tr class="contra"><th>CONTRAMEDIDA</th><td>{{ p.contramedida }}</td></tr>
-    <tr><th>HTA EQUIPO</th><td>{{ p.hta }}</td></tr>
-    <tr><th>MATERIAL REFACC</th><td>{{ p.material }}</td></tr>
-    <tr><th>TIEMPO EJEC.</th><td>{{ p.tiempo }}</td></tr>
-    <tr><th>FREC.</th><td>{{ p.frec }}</td></tr>
-    <tr><th>HORA EJEC.</th><td>{{ p.hora }}</td></tr>
-  </table>
+<article class="panel paso" id="paso-{{ p.n }}" aria-labelledby="paso-{{ p.n }}-t">
+  <header class="paso-h"><span class="paso-n" aria-hidden="true">{{ p.n }}</span>
+    <h3 id="paso-{{ p.n }}-t"><span class="sr-only">Paso {{ p.n }}: </span>{{ p.punto }}</h3></header>
+  <dl class="paso-campos">
+    <div><dt>Método</dt><dd>{{ v(p.metodo) }}</dd></div>
+    <div><dt>Norma / criterio</dt><dd>{{ v(p.norma) }}</dd></div>
+    <div class="contra"><dt>{{ icono("alert") }}Contramedida</dt><dd>{{ v(p.contramedida) }}</dd></div>
+  </dl>
+  <dl class="paso-meta">
+    <div class="ancho"><dt>{{ icono("wrench") }}Herramienta</dt><dd>{{ v(p.hta) }}</dd></div>
+    <div class="ancho"><dt>{{ icono("package") }}Material</dt><dd>{{ v(p.material) }}</dd></div>
+    <div><dt>{{ icono("clock") }}Tiempo</dt><dd>{{ tiempo(p.tiempo) }}</dd></div>
+    <div><dt>{{ icono("calendar") }}Frecuencia</dt><dd>{{ frec(p.frec) }}</dd></div>
+    <div class="ancho"><dt>{{ icono("power") }}Hora ejec.</dt><dd>{{ hora(p.hora) }}</dd></div>
+  </dl>
   {% if p.figs %}
   <div class="figs">
-    {% for f in p.figs %}<button type="button" onclick="zoom(this)" aria-label="Ampliar imagen">{{ f|safe }}</button>{% endfor %}
+    {% for f in p.figs %}<button type="button" onclick="zoom(this)" aria-label="Ampliar imagen {{ loop.index }} del paso {{ p.n }}">{{ f|safe }}{{ icono("zoom-in") }}</button>{% endfor %}
   </div>
   {% endif %}
 </article>
 {% endfor %}
+</section>
 {% endfor %}
 
-{% if m.leyenda %}<div class="card leyenda">{{ m.leyenda }}</div>{% endif %}
+{% if m.leyenda %}<p class="panel leyenda">{{ icono("info") }}<span>{{ m.leyenda }}</span></p>{% endif %}
+</div>
 
-<div id="zoom" onclick="if(event.target===this)closeZoom()">
-  <button class="x" type="button" onclick="closeZoom()" aria-label="Cerrar">✕</button>
+<div id="zoom" role="dialog" aria-modal="true" aria-label="Imagen ampliada" onclick="if(event.target===this)closeZoom()">
+  <button class="btn btn-secondary btn-icon x" type="button" onclick="closeZoom()" aria-label="Cerrar">{{ icono("x") }}</button>
   <div class="box"></div>
 </div>
 <script>
-  const wide = () => matchMedia('(min-width: 1000px)').matches;
+  const wide = () => matchMedia('(min-width: 1100px)').matches;
   function toggleMenu(open) {
     const m = document.getElementById('menu'), on = open ?? !m.classList.contains('open');
     m.classList.toggle('open', on); document.getElementById('shade').classList.toggle('open', on);
     document.body.classList.toggle('menu-open', on);
+    document.querySelector('.menu-btn').setAttribute('aria-expanded', on);
+    if (on && !wide()) m.querySelector('a[aria-current], a.s')?.focus();
   }
   if (wide()) toggleMenu(true);
+  let abridor = null;
   function zoom(btn) {
     const z = document.getElementById('zoom');
-    z.querySelector('.box').innerHTML = btn.innerHTML; z.classList.add('open');
+    z.querySelector('.box').innerHTML = btn.querySelector('svg.fig').outerHTML; z.classList.add('open');
+    abridor = btn; z.querySelector('.x').focus();
   }
-  function closeZoom() { document.getElementById('zoom').classList.remove('open'); }
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeZoom(); toggleMenu(false); } });
+  function closeZoom() {
+    const z = document.getElementById('zoom');
+    if (!z.classList.contains('open')) return;
+    z.classList.remove('open'); abridor?.focus();
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('zoom').classList.contains('open')) return closeZoom();
+    if (document.getElementById('menu').classList.contains('open')) { toggleMenu(false); document.querySelector('.menu-btn').focus(); }
+  });
+  // sección visible marcada en el menú: el técnico siempre sabe dónde está
+  const enlaces = new Map([...document.querySelectorAll('#menu a.s')].map(a => [a.hash.slice(1), a]));
+  const observador = new IntersectionObserver(entradas => {
+    for (const e of entradas) if (e.isIntersecting) {
+      enlaces.forEach(a => a.removeAttribute('aria-current'));
+      enlaces.get(e.target.getAttribute('aria-labelledby'))?.setAttribute('aria-current', 'location');
+    }
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  document.querySelectorAll('.estacion > section').forEach(s => observador.observe(s));
 </script>
 {% endblock %}

@@ -24,10 +24,26 @@ for m in machines:
             assert (OUT / src).exists(), src
     page = (OUT / "estacion" / m["slug"] / "index.html").read_text(encoding="utf-8")
     assert m["secciones"][0]["nombre"] in page and "Inicio" not in page
-    assert "Consulta sobre hpm" in page and "GERENTE" not in page and "COORDINADOR" not in page
+    assert f"Consulta sobre {m['info']['equipo']}" in page and "GERENTE" not in page and "COORDINADOR" not in page
     qr = (OUT / "qr" / f"{m['slug']}.svg").read_text()
     assert qr.startswith("<svg") and "data:image/png;base64," in qr  # logo incrustado: <img> no carga archivos externos
     print(f"OK {m['slug']}: {len(nums)} pasos, {len(m['figuras'])} imágenes")
+
+# troubleshooting: una página por máquina con matriz, y el administrador con sus datos
+from build import TS_DIR, TS_JSON
+import openpyxl
+fallas = json.loads((OUT / "fallas.json").read_text(encoding="utf-8"))
+assert (OUT / "admin" / "index.html").exists() and len(fallas) == 4, list(fallas)
+for m in machines:
+    assert m["efectos"], m["slug"]
+    page = (OUT / "estacion" / m["slug"] / "troubleshooting" / "index.html").read_text(encoding="utf-8")
+    assert page.count('class="panel efecto"') == len(m["efectos"]), m["slug"]
+    assert 'href="troubleshooting/"' in (OUT / "estacion" / m["slug"] / "index.html").read_text(encoding="utf-8")
+if not TS_JSON.exists():  # leído de las matrices: cada marca ꙩ debe volverse una causa
+    marcas = sum(1 for p in TS_DIR.glob("Matriz*.xlsx") for ws in openpyxl.load_workbook(p, data_only=True).worksheets
+                 for r in ws.iter_rows(min_row=3, min_col=4) for c in r if c.value not in (None, ""))
+    assert marcas == sum(len(e["causas"]) for m in machines for e in m["efectos"]), marcas
+print(f"OK troubleshooting: {sum(len(m['efectos']) for m in machines)} efectos")
 
 # consulta: [estación, pregunta, número de paso entre los primeros 5 o texto que debe traer la respuesta]
 CASOS = json.loads((BASE / "casos_consulta.json").read_text(encoding="utf-8"))

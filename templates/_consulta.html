@@ -1,6 +1,10 @@
-<section class="card consulta" aria-label="Consulta sobre hpm" data-raiz="{{ raiz }}" data-estacion="{{ estacion }}">
-  <label for="consulta-q">Consulta sobre hpm</label>
-  <input id="consulta-q" type="search" autocomplete="off" placeholder="Ej. cada cuándo se lubrican los carros">
+{% from "_iconos.html" import icono %}
+<section class="panel consulta" aria-labelledby="consulta-t" data-raiz="{{ raiz }}" data-estacion="{{ estacion }}">
+  <label class="consulta-label" id="consulta-t" for="consulta-q">Consulta sobre {{ nombre or "hpm" }}</label>
+  <div class="input-wrap">
+    {{ icono("search") }}
+    <input class="input" id="consulta-q" type="search" autocomplete="off" placeholder="Ej. cada cuándo se lubrican los carros">
+  </div>
   <div id="consulta-res" aria-live="polite"></div>
 </section>
 <script src="{{ raiz }}asistente.js" defer></script>

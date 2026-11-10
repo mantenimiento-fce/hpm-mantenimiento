@@ -41,6 +41,13 @@ X = "{http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing}"
 R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 SHAPES = ("grpSp", "pic", "sp", "cxnSp")
 AZUL_LOGO = "#0023c9"
+
+TS_DIR = BASE / "troubleshooting"
+# lo que capture el administrador; mientras no exista, los efectos salen de las matrices causa-efecto
+TS_JSON = TS_DIR / "troubleshooting.json"
+# hoja de las matrices y del Excel de fallas -> estación del HPM (los nombres no coinciden entre archivos)
+TS_ESTACION = {"BLUETOOTH": "bluetooth-tester", "DISPLAY-TESTER": "display-tester-station",
+               "FLASHING-DXD-L2": "flashing-station", "RF-TEST": "rft-station"}
 EMU = 12700  # EMU por punto: el SVG se dibuja en puntos (los navegadores no pintan letras de 139700 px)
 
 
@@ -349,6 +356,52 @@ def load_machine(path):
             "total": sum(len(s["pasos"]) for s in sections)}
 
 
+# ---------------------------------------------------------------- troubleshooting
+
+def limpio(v):
+    return re.sub(r"\s+", " ", txt(v))
+
+
+def load_matriz(ws):
+    """Matriz causa-efecto: fila 1 = causas, fila 2 = su número, A/B = N° y efecto, C = categoría (celda combinada),
+    una marca (ꙩ) en el cruce = esa causa aplica a ese efecto."""
+    causas = {c.column: limpio(ws.cell(1, c.column).value) for c in ws[2][3:] if txt(c.value)}
+    efectos, categoria = [], ""
+    for row in ws.iter_rows(min_row=3):
+        categoria = limpio(row[2].value) or categoria
+        efecto = limpio(row[1].value)
+        if efecto:
+            efectos.append({"efecto": efecto, "categoria": categoria,
+                            "causas": [causas[c.column] for c in row[3:] if txt(c.value) and c.column in causas]})
+    return efectos
+
+
+def load_troubleshooting():
+    """({slug: [efectos]}, {slug: [{falla, mensaje}]}, nombre del Excel de fallas)."""
+    if TS_JSON.exists():
+        efectos = json.loads(TS_JSON.read_text(encoding="utf-8"))
+    else:
+        efectos = {}
+        for p in sorted(TS_DIR.glob("Matriz*.xlsx")):
+            for ws in openpyxl.load_workbook(p, data_only=True).worksheets:
+                if ws.title in TS_ESTACION:
+                    efectos[TS_ESTACION[ws.title]] = load_matriz(ws)
+                else:
+                    print(f"aviso: hoja '{ws.title}' de {p.name} sin estación en TS_ESTACION")
+    fallas, origen = {}, ""
+    for p in sorted(TS_DIR.glob("Fallas*.xlsx")):
+        origen = p.stem
+        for ws in openpyxl.load_workbook(p, data_only=True).worksheets:
+            if ws.title not in TS_ESTACION:
+                print(f"aviso: hoja '{ws.title}' de {p.name} sin estación en TS_ESTACION")
+                continue
+            lista = fallas.setdefault(TS_ESTACION[ws.title], {})
+            for falla, mensaje, *_ in ws.iter_rows(min_row=2, values_only=True):
+                if txt(falla):
+                    lista.setdefault(limpio(falla), {"falla": limpio(falla), "mensaje": limpio(mensaje)})
+    return efectos, {k: list(v.values()) for k, v in fallas.items()}, origen
+
+
 def qr_svg(url):
     """QR en el azul del logo, con el logo al centro; la corrección H compensa los módulos del hueco."""
     q = qrcode.QRCode(error_correction=qrcode.ERROR_CORRECT_H, border=2)
@@ -378,14 +431,26 @@ def build():
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(text, encoding="utf-8")
 
+    efectos, fallas, fallas_origen = load_troubleshooting()
+    for m in machines:
+        m["efectos"] = efectos.get(m["slug"], [])
+
     write("index.html", env.get_template("index.html").render(machines=machines))
     for m in machines:
         write(f"estacion/{m['slug']}/index.html", env.get_template("estacion.html").render(m=m))
+        if m["efectos"]:
+            write(f"estacion/{m['slug']}/troubleshooting/index.html", env.get_template("troubleshooting.html").render(m=m))
         m["url"] = f"{base_url}/estacion/{m['slug']}/"
         if base_url:
             write(f"qr/{m['slug']}.svg", qr_svg(m["url"]))
     write("qr/index.html", env.get_template("qr.html").render(machines=machines, base_url=base_url))
+    write("admin/index.html", env.get_template("admin.html").render(
+        machines=machines, fallas_origen=fallas_origen, repo=os.environ.get("GITHUB_REPOSITORY", "")))
+    # el administrador parte de lo publicado; el Excel de fallas solo se consulta ahí
+    write("troubleshooting.json", json.dumps({m["slug"]: m["efectos"] for m in machines}, ensure_ascii=False, indent=1))
+    write("fallas.json", json.dumps(fallas, ensure_ascii=False))
     shutil.copy(BASE / "templates" / "asistente.js", OUT / "asistente.js")
+    shutil.copy(BASE / "templates" / "logo.png", OUT / "logo.png")  # cabecera y favicon
     # datos de la consulta sobre hpm: un solo archivo para buscar por estación o en todas
     pasos = [{"e": m["slug"], "sec": s["nombre"], **{k: v for k, v in p.items() if k != "figs"}}
              for m in machines for s in m["secciones"] for p in s["pasos"]]

@@ -13,6 +13,23 @@ que descargar, y no redacta texto propio sobre los procedimientos.
 Para que entienda palabras nuevas, agregarlas a `SINONIMOS` en `templates/asistente.js`. Las preguntas que deben
 seguir funcionando están en `casos_consulta.json`.
 
+## Troubleshooting
+
+Cada estación tiene un botón **Troubleshooting** (`/estacion/<estacion>/troubleshooting/`) con sus efectos de falla,
+agrupados en EQUIPO / PROCESO / MATERIAL, y las posibles causas de cada uno. Los datos salen de las matrices
+causa-efecto de `troubleshooting/` (una marca ꙩ en el cruce = esa causa aplica). Si una hoja nueva no aparece,
+agregar su nombre a `TS_ESTACION` en `build.py`.
+
+### Administrador (provisional)
+
+`/admin/` permite añadir, editar y eliminar efectos y causas, y muestra por máquina la lista de fallas del Excel
+`troubleshooting/Fallas por Máquina…xlsx` (botón *Crear efecto* para pasar una falla al editor).
+Los cambios quedan como borrador en el navegador. **Publicar** guarda `troubleshooting/troubleshooting.json` en el
+repositorio con un token personal de GitHub (fine-grained, solo este repositorio, Contents: Read and write) y el sitio
+se regenera solo. Sin token, *Descargar JSON* y copiar el archivo a `troubleshooting/` hace lo mismo.
+En cuanto existe `troubleshooting.json`, es la fuente de los efectos y las matrices de Excel ya no se leen.
+Después de publicar desde el administrador, hacer `git pull` antes de seguir trabajando en local.
+
 ## Publicar en GitHub Pages
 
 1. Crear un repositorio en GitHub y subir esta carpeta a la rama `main`.

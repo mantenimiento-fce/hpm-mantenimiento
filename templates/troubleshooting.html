@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% set raiz = "../../../" %}
+{% block title %}Troubleshooting · {{ m.info.equipo }}{% endblock %}
+{% block cabecera %}
+<a class="btn btn-ghost btn-icon" href="../" aria-label="Volver a la hoja HPM" title="Volver a la hoja HPM">{{ icono("arrow-left") }}</a>
+<div class="top-titulo"><h1>Troubleshooting</h1><p class="nombre-estacion">{{ m.info.equipo }} · {{ m.efectos|length }} efectos</p></div>
+{% endblock %}
+{% block head %}
+<style>
+  .ts { max-width: 880px; }
+  .ts-intro { margin-bottom: var(--sp-5); color: var(--c-muted); max-width: var(--measure); }
+  .ts-filtro { padding: var(--sp-4); }
+  .ts-filtro label { display: block; margin-bottom: var(--sp-2); font: 700 var(--fs-lg)/var(--lh-tight) var(--font-display); color: var(--c-ink); }
+  .ts-filtro [role="status"] { margin-top: var(--sp-2); font-size: var(--fs-sm); color: var(--c-muted); }
+  .ts-vacio { display: flex; gap: var(--sp-3); margin-top: var(--sp-5); padding: var(--sp-4); color: var(--c-muted); }
+
+  .efecto { margin-bottom: var(--sp-3); overflow: hidden; }
+  .efecto:target { box-shadow: 0 0 0 3px var(--c-amber); }
+  .efecto summary { display: flex; align-items: center; gap: var(--sp-3); min-height: 72px; padding: var(--sp-3) var(--sp-4);
+                    cursor: pointer; list-style: none; transition: background-color var(--dur) var(--ease); }
+  .efecto summary::-webkit-details-marker { display: none; }
+  .efecto summary:hover { background: var(--c-blue-tint); }
+  .efecto summary:focus-visible { outline-offset: -3px; }
+  .efecto-t { flex: 1; min-width: 0; }
+  .efecto-t b { display: block; font-weight: 600; line-height: var(--lh-snug); color: var(--c-ink); overflow-wrap: anywhere; }
+  .efecto-t span { font-size: var(--fs-xs); color: var(--c-muted); }
+  .efecto summary > .icon { color: var(--c-muted); transition: transform var(--dur) var(--ease); }
+  .efecto[open] summary > .icon { transform: rotate(180deg); }
+  .efecto[open] summary { border-bottom: 1px solid var(--c-line); }
+
+  .causas { margin: 0; padding: var(--sp-3) var(--sp-4) var(--sp-4); list-style: none; counter-reset: causa; }
+  .causas-t { margin: var(--sp-3) var(--sp-4) 0; }
+  .causas li { counter-increment: causa; display: grid; grid-template-columns: 28px 1fr; gap: var(--sp-3); align-items: baseline;
+               padding: var(--sp-2) 0; border-bottom: 1px dashed var(--c-line); max-width: var(--measure); }
+  .causas li:last-child { border-bottom: 0; }
+  .causas li::before { content: counter(causa); font: 700 var(--fs-md)/1 var(--font-display); color: var(--c-blue); text-align: right; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap ts">
+  <p class="ts-intro">Busque el efecto que observa en la máquina y ábralo para ver sus posibles causas. Las causas salen de la matriz causa‑efecto de la estación.</p>
+
+  <div class="panel ts-filtro">
+    <label for="ts-q">Buscar efecto o causa</label>
+    <div class="input-wrap">{{ icono("search") }}
+      <input class="input" id="ts-q" type="search" autocomplete="off" placeholder="Ej. no enciende, timeout, sensor"></div>
+    <p role="status" id="ts-cuenta">{{ m.efectos|length }} efectos</p>
+  </div>
+
+  {% set n = namespace(i=0) %}
+  {# categorías en el orden en que aparecen (el Excel va EQUIPO, PROCESO, MATERIAL) #}
+  {% set cats = [] %}{% for e in m.efectos %}{% if e.categoria not in cats %}{% set _ = cats.append(e.categoria) %}{% endif %}{% endfor %}
+  {% for cat in cats %}{% set efectos = m.efectos|selectattr("categoria", "equalto", cat)|list %}
+  <section class="ts-cat" aria-labelledby="cat-{{ loop.index }}">
+    <h2 class="sec" id="cat-{{ loop.index }}">{{ cat or "Sin categoría" }}<small>{{ efectos|length }} efectos</small></h2>
+    {% for e in efectos %}{% set n.i = n.i + 1 %}
+    <details class="panel efecto" id="efecto-{{ n.i }}">
+      <summary><span class="paso-n" aria-hidden="true">{{ n.i }}</span>
+        <span class="efecto-t"><b>{{ e.efecto }}</b><span>{{ e.causas|length }} posible{{ "s" if e.causas|length != 1 }} causa{{ "s" if e.causas|length != 1 }}</span></span>
+        {{ icono("chevron-down") }}</summary>
+      {% if e.causas %}
+      <p class="eyebrow causas-t">Posibles causas</p>
+      <ol class="causas">{% for c in e.causas %}<li>{{ c }}</li>{% endfor %}</ol>
+      {% else %}
+      <p class="causas muted">Aún no hay causas registradas para este efecto.</p>
+      {% endif %}
+    </details>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <p class="panel ts-vacio" id="ts-vacio" hidden>{{ icono("search") }}<span>Ningún efecto ni causa coincide con la búsqueda. Pruebe con otra palabra o con parte del código de error.</span></p>
+</div>
+<script>
+  // filtro: muestra los efectos cuyo texto o causas contienen todas las palabras (sin acentos ni mayúsculas)
+  const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const efectos = [...document.querySelectorAll('.efecto')].map(d => ({ d, t: norm(d.textContent) }));
+  const caja = document.getElementById('ts-q'), cuenta = document.getElementById('ts-cuenta');
+  caja.addEventListener('input', () => {
+    const palabras = norm(caja.value).split(/\s+/).filter(Boolean);
+    let n = 0;
+    for (const { d, t } of efectos) {
+      const ok = palabras.every(p => t.includes(p));
+      d.hidden = !ok; n += ok;
+      if (palabras.length) d.open = ok;
+    }
+    document.querySelectorAll('.ts-cat').forEach(s => s.hidden = !s.querySelector('.efecto:not([hidden])'));
+    document.getElementById('ts-vacio').hidden = n > 0;
+    cuenta.textContent = palabras.length ? `${n} de ${efectos.length} efectos coinciden` : `${efectos.length} efectos`;
+  });
+  // enlace directo a un efecto (#efecto-5): abrirlo
+  const destino = location.hash && document.querySelector(location.hash + '.efecto');
+  if (destino) destino.open = true;
+</script>
+{% endblock %}
