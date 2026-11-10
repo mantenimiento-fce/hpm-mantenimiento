@@ -363,9 +363,9 @@ def limpio(v):
 
 
 def load_matriz(ws):
-    """Matriz causa-efecto: fila 1 = causas, fila 2 = su número, A/B = N° y efecto, C = categoría (celda combinada),
+    """Matriz causa-efecto: fila 1 = causas (la fila 2 con su número es opcional), A/B = N° y efecto, C = categoría (celda combinada),
     una marca (ꙩ) en el cruce = esa causa aplica a ese efecto."""
-    causas = {c.column: limpio(ws.cell(1, c.column).value) for c in ws[2][3:] if txt(c.value)}
+    causas = {c.column: limpio(c.value) for c in ws[1][3:] if txt(c.value)}  # por nombre: causas nuevas sin número también cuentan
     efectos, categoria = [], ""
     for row in ws.iter_rows(min_row=3):
         categoria = limpio(row[2].value) or categoria
