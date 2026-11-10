@@ -9,7 +9,6 @@
 {% block head %}
 <style>
   .ts { max-width: 880px; }
-  .ts-intro { margin-bottom: var(--sp-5); color: var(--c-muted); max-width: var(--measure); }
   .ts-filtro { padding: var(--sp-4); }
   .ts-filtro label { display: block; margin-bottom: var(--sp-2); font: 700 var(--fs-lg)/var(--lh-tight) var(--font-display); color: var(--c-ink); }
   .ts-filtro [role="status"] { margin-top: var(--sp-2); font-size: var(--fs-sm); color: var(--c-muted); }
@@ -39,8 +38,6 @@
 {% endblock %}
 {% block content %}
 <div class="wrap ts">
-  <p class="ts-intro">Busque el efecto que observa en la máquina y ábralo para ver sus posibles causas. Las causas salen de la matriz causa‑efecto de la estación.</p>
-
   <div class="panel ts-filtro">
     <label for="ts-q">Buscar efecto o causa</label>
     <div class="input-wrap">{{ icono("search") }}
