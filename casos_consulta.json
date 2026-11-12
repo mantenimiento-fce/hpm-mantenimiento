@@ -49,5 +49,6 @@
 ["flashing-station", "que tareas son mensuales", "4 puntos"],
 ["", "cada cuando se lubrican los carros", "27"],
 ["flashing-station", "xyzzy foo", "Sin coincidencias"],
-["flashing-station", "fuga de aire", "Sin coincidencias"]
+["flashing-station", "fuga de aire", "Sin coincidencias"],
+["flashing-station", "la maquina no enciende", "La máquina no enciende"]
 ]

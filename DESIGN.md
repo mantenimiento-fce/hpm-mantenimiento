@@ -1,4 +1,4 @@
-# Sistema de diseño · HPM
+# Sistema de diseño · Mantenimiento
 
 Dirección: **sobria e industrial, tipo manual técnico.** Papel cálido, tinta azul oscura, el azul FORVIA
 para acciones y ámbar de seguridad industrial solo para lo que exige atención (contramedidas, precauciones).

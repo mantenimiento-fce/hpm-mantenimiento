@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% from "_iconos.html" import icono %}
 {% set raiz = "../" %}
-{% block title %}Códigos QR · HPM{% endblock %}
+{% block title %}Códigos QR · Mantenimiento{% endblock %}
 {% block cabecera %}
-<a class="btn btn-ghost btn-icon" href="../" aria-label="Estaciones" title="Estaciones">{{ icono("arrow-left") }}</a>
-<div class="top-titulo"><h1>Códigos QR de estaciones</h1><p>Para pegar en cada estación</p></div>
+<a class="btn btn-ghost btn-icon" href="../" aria-label="Inicio" title="Inicio">{{ icono("arrow-left") }}</a>
+<div class="top-titulo"><h1>Códigos QR de estaciones</h1><p>{{ machines|length }} estaciones</p></div>
 {% endblock %}
 {% block head %}
 <style>
@@ -14,12 +14,11 @@
   .qr { padding: var(--sp-5) var(--sp-4); text-align: center; border: 2px solid var(--c-ink); break-inside: avoid; }
   .qr img { width: 100%; max-width: 220px; }
   .qr h2 { margin: var(--sp-2) 0 var(--sp-1); font-size: var(--fs-xl); }
-  .qr small { display: block; margin-top: var(--sp-2); font-size: var(--fs-xs); word-break: break-all; color: var(--c-muted); }
   .aviso { display: flex; gap: var(--sp-3); padding: var(--sp-4); border-left: 4px solid var(--c-amber); background: var(--c-amber-tint); color: var(--c-amber-ink); }
   /* margin 0: el navegador ya no imprime fecha, título ni URL en los márgenes de la hoja */
   @page { margin: 0; }
   @media print {
-    .noprint, .top, .pie, .qr small { display: none; }
+    .noprint, .top, .pie { display: none; }
     body { background: #fff; }
     .qr { box-shadow: none; }
     main { padding: 12mm; }
@@ -30,7 +29,6 @@
 <div class="wrap">
 {% if base_url %}
 <div class="qr-intro noprint">
-  <p>Cada código abre directamente la hoja HPM de su estación. Imprima en tamaño real y péguelo en un lugar visible.</p>
   <button class="btn btn-primary" type="button" onclick="print()">{{ icono("printer") }} Imprimir</button>
 </div>
 <div class="qrs">
@@ -38,7 +36,6 @@
   <div class="panel qr">
     <img src="{{ m.slug }}.svg" alt="QR {{ m.info.equipo }}">
     <h2 class="nombre-estacion">{{ m.info.equipo }}</h2>
-    <small>{{ m.url }}</small>
   </div>
   {% endfor %}
 </div>

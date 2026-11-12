@@ -1,5 +1,5 @@
-# Genera el sitio desde los Excel de HPM/ y lo publica en GitHub Pages en cada push a main.
-name: Publicar HPM
+# Genera el sitio de Mantenimiento (HPM, troubleshooting, indicadores) y lo publica en GitHub Pages en cada push a main.
+name: Publicar Mantenimiento
 
 on:
   push:
@@ -32,6 +32,7 @@ jobs:
       - run: python build.py
         env:
           BASE_URL: ${{ steps.pages.outputs.base_url }}
+          ANDON_TOKEN: ${{ secrets.ANDON_TOKEN }}  # publicar CSV de ANDON desde el dashboard (queda visible en la página)
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

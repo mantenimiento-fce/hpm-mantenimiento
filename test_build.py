@@ -1,4 +1,5 @@
 """py test_build.py  -> genera el sitio y verifica los 4 HPM, imágenes con números y QR."""
+import html
 import json
 import os
 import re
@@ -29,21 +30,54 @@ for m in machines:
     assert qr.startswith("<svg") and "data:image/png;base64," in qr  # logo incrustado: <img> no carga archivos externos
     print(f"OK {m['slug']}: {len(nums)} pasos, {len(m['figuras'])} imágenes")
 
-# troubleshooting: una página por máquina con matriz, y el administrador con sus datos
-from build import TS_DIR, TS_JSON
+# troubleshooting: una página por máquina con matriz; sin administrador
+from build import TS_DIR
 import openpyxl
-fallas = json.loads((OUT / "fallas.json").read_text(encoding="utf-8"))
-assert (OUT / "admin" / "index.html").exists() and len(fallas) == 4, list(fallas)
+assert not (OUT / "admin").exists() and not (OUT / "fallas.json").exists()
+hpm = json.loads((OUT / "hpm.json").read_text(encoding="utf-8"))
 for m in machines:
     assert m["efectos"], m["slug"]
     page = (OUT / "estacion" / m["slug"] / "troubleshooting" / "index.html").read_text(encoding="utf-8")
     assert page.count('class="panel efecto"') == len(m["efectos"]), m["slug"]
     assert 'href="troubleshooting/"' in (OUT / "estacion" / m["slug"] / "index.html").read_text(encoding="utf-8")
-if not TS_JSON.exists():  # leído de las matrices: cada marca ꙩ debe volverse una causa
-    marcas = sum(1 for p in TS_DIR.glob("Matriz*.xlsx") for ws in openpyxl.load_workbook(p, data_only=True).worksheets
-                 for r in ws.iter_rows(min_row=3, min_col=4) for c in r if c.value not in (None, ""))
-    assert marcas == sum(len(e["causas"]) for m in machines for e in m["efectos"]), marcas
+    # la consulta enlaza a #efecto-n: el n-ésimo efecto de la página debe ser el mismo
+    en_pagina = [html.unescape(t) for t in re.findall(r'class="efecto-t"><b>(.*?)</b>', page)]
+    assert en_pagina == [f["efecto"] for f in hpm["fallas"] if f["e"] == m["slug"]], m["slug"]
+marcas = sum(1 for p in TS_DIR.glob("Matriz*.xlsx") for ws in openpyxl.load_workbook(p, data_only=True).worksheets
+             for r in ws.iter_rows(min_row=3, min_col=4) for c in r if c.value not in (None, ""))
+assert marcas == sum(len(e["causas"]) for m in machines for e in m["efectos"]), marcas
+for pagina in ("index.html", "qr/index.html", "kpi/index.html"):
+    texto = (OUT / pagina).read_text(encoding="utf-8")
+    assert "admin" not in texto.lower() and "Seleccione la estación" not in texto and "Cada código abre" not in texto, pagina
+assert "github.io" not in (OUT / "qr" / "index.html").read_text(encoding="utf-8")
 print(f"OK troubleshooting: {sum(len(m['efectos']) for m in machines)} efectos")
+
+# KPIs: mismas cifras que KPIs_Mantenimiento_BDR_MTTR_MTBF.md (oct-2026: 701 fallas, 38,247 min, MTTR 54.6)
+js = r"""
+const A=require('./templates/andon.js'),fs=require('fs'),assert=require('assert');
+const regs=JSON.parse(fs.readFileSync('_site/andon.json','utf8')),lineas=JSON.parse(fs.readFileSync('_site/lineas.json','utf8'));
+const M=A.crearModelo(regs,lineas),k=M.calcular({anio:2026,mes:10});
+assert.deepStrictEqual([k.fallas,Math.round(k.paro),k.mttr.toFixed(1)],[701,38247,'54.6']);
+assert.strictEqual(M.calcular({anio:2026,mes:10,linea:'Honda 25SA'}).bdr.toFixed(1),'54.6');
+// combinar: nada se pierde, lo más avanzado gana, lo viejo no pisa lo nuevo
+const a={id:1,est:10,tot:60},b={id:1,est:100,tot:90},c={id:2,est:100,tot:5};
+let r=A.combinar([b],[a,c]);assert.deepStrictEqual([r.registros,r.agregados,r.actualizados,r.iguales],[[b,c],1,0,1]);
+r=A.combinar([a],[b]);assert.deepStrictEqual([r.registros,r.actualizados],[[b],1]);
+// CSV con comillas, comas y saltos de línea dentro de un campo
+const enc='Número,Orígen,Inicio de la falla,Turno,Estatus del reporte (0=x),Tiempo de localización (segundos),Tiempo de reparacion (segundos),Tiempo total de la parada (segundos),Linea,Maquina,Area que atendio,Falla confirmada,Detalle de la falla (reporte tecnico),Genero interrupcion?';
+const csv='SIGMA,,\r\n'+enc+'\r\n7,X,"05/01/2026 09:50",Turno 1,1000,60,120,180,Honda 25SA,"EOL, 2","Mantenimiento Mecanico",Falla,"línea 1\nlínea 2",Si\r\n';
+assert.deepStrictEqual(A.leerCsv(csv),[{id:7,ini:'2026-01-05 09:50',turno:'Turno 1',est:1000,loc:60,rep:120,tot:180,lin:'Honda 25SA',maq:'EOL, 2',area:'Mantenimiento Mecanico',falla:'Falla',int:'Si',auto:0}]);
+assert.throws(()=>A.leerCsv('a,b\n1,2'),/Número/);
+const q=A.crearConsulta(regs,lineas);
+assert(A.esKpi('cual es el mttr de octubre') && !A.esKpi('cada cuando se lubrican los carros'));
+assert(/^Octubre 2026: MTTR 54.6 min/.test(q('cual es el mttr de octubre').texto), q('cual es el mttr de octubre').texto);
+assert(/Honda 25SA/.test(q('bdr de honda en octubre').texto));
+assert(/Máquinas/.test(q('maquinas con mas fallas en octubre').texto));
+console.log('ok');
+"""
+kpi = subprocess.run(["node", "-"], input=js, capture_output=True, text=True, encoding="utf-8", cwd=BASE)
+assert kpi.stdout.strip() == "ok", kpi.stderr
+print("OK KPIs")
 
 # consulta: [estación, pregunta, número de paso entre los primeros 5 o texto que debe traer la respuesta]
 CASOS = json.loads((BASE / "casos_consulta.json").read_text(encoding="utf-8"))

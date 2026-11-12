@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#fffefa">
-<title>{% block title %}HPM Mantenimiento{% endblock %}</title>
+<title>{% block title %}Mantenimiento{% endblock %}</title>
 <link rel="icon" href="{{ raiz }}logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -146,6 +146,9 @@
   .consulta-item:hover { border-color: var(--c-blue); background: var(--c-blue-tint); }
   .consulta-n { grid-row: span 2; height: var(--tap); border-radius: var(--r-sm); background: var(--c-ink); color: var(--c-on-dark);
                 display: grid; place-items: center; font: 700 var(--fs-md)/1 var(--font-display); }
+  .consulta-n-ts { background: var(--c-amber-tint); color: var(--c-amber-ink); border: 1px solid var(--c-amber); }
+  .consulta-grupo { margin-top: var(--sp-4); }
+  .consulta-kpi { margin-top: var(--sp-3); }
   .consulta-punto { font-weight: 600; color: var(--c-ink); }
   .consulta-datos { font-size: var(--fs-sm); }
   .consulta-datos b { font-weight: 600; }
@@ -164,10 +167,10 @@
 <a class="sr-only" href="#contenido">Saltar al contenido</a>
 <header class="top"><div class="wrap">
   {% block cabecera %}
-  <a class="marca" href="{{ raiz or './' }}"><img src="{{ raiz }}logo.png" alt="" width="28" height="25"><b>HPM</b><span>Mantenimiento preventivo</span></a>
+  <a class="marca" href="{{ raiz or './' }}"><img src="{{ raiz }}logo.png" alt="" width="28" height="25"><b>Mantenimiento</b><span>Forvia San Juan del Río</span></a>
   {% endblock %}
 </div></header>
 <main id="contenido">{% block content %}{% endblock %}</main>
-<footer class="pie"><div class="wrap">Hojas de Mantenimiento Preventivo (HPM) · Departamento de Mantenimiento</div></footer>
+<footer class="pie"><div class="wrap">Departamento de Mantenimiento · Forvia San Juan del Río</div></footer>
 </body>
 </html>

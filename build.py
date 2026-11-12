@@ -1,6 +1,6 @@
-"""HPM web: genera el sitio estático (GitHub Pages) de mantenimiento preventivo por estación.
+"""Mantenimiento web: genera el sitio estático (GitHub Pages): estaciones (HPM y troubleshooting) e indicadores.
 
-Lee los Excel de ./HPM y escribe el sitio en ./_site
+Lee los Excel de ./HPM, ./troubleshooting y ./Maintenance 2026 y escribe el sitio en ./_site
     set BASE_URL=https://<usuario>.github.io/<repo>/   (dirección pública, para los QR)
     py build.py
     py -m http.server -d _site 8000                     (vista previa local)
@@ -43,11 +43,20 @@ SHAPES = ("grpSp", "pic", "sp", "cxnSp")
 AZUL_LOGO = "#0023c9"
 
 TS_DIR = BASE / "troubleshooting"
-# lo que capture el administrador; mientras no exista, los efectos salen de las matrices causa-efecto
-TS_JSON = TS_DIR / "troubleshooting.json"
-# hoja de las matrices y del Excel de fallas -> estación del HPM (los nombres no coinciden entre archivos)
+# hoja de las matrices -> estación del HPM (los nombres no coinciden entre archivos)
 TS_ESTACION = {"BLUETOOTH": "bluetooth-tester", "DISPLAY-TESTER": "display-tester-station",
                "FLASHING-DXD-L2": "flashing-station", "RF-TEST": "rft-station"}
+KPI_DIR = BASE / "Maintenance 2026"
+ANDON_JSON = KPI_DIR / "andon.json"  # reportes ANDON acumulados; el dashboard publica aquí lo que se sube
+# línea de ANDON -> líneas de "Datos Maestros Actual" del Excel de KPI (los nombres no coinciden; un grupo suma su tiempo).
+# Ford P702-1/-2 comparten "Ford 702" y Nissan HJ -> Humax son supuestos: ver KPIs_Mantenimiento_BDR_MTTR_MTBF.md 7.5
+LINEAS_ANDON = {
+    "Honda 25SA": ["Honda 25SA"], "Ford U625": ["Ford U625"], "Ford P708": ["Ford 708"],
+    "Ford P702-1": ["Ford 702"], "Ford P702-2": ["Ford 702"], "CWL-17 SCANIA": ["Scania Camera"],
+    "P13C Display RTV": ["Nissan P13C"], "P13C Display OB2": ["Optical Bonding 2"], "A IVI": ["Nissan AVI"],
+    "Nissan H61P": ["Nissan H61P"], "Mitsuba": ["Mitsuba"], "AVM": ["Nissan AVM ECU"], "Nissan HJ": ["Nissan Humax"],
+    "Stellantis": ["Stellantis ECU", "Stellantis Display", "Stellantis RVC"], "Rivian": ["Rivian Display", "Rivian Remoute"],
+}
 EMU = 12700  # EMU por punto: el SVG se dibuja en puntos (los navegadores no pintan letras de 139700 px)
 
 
@@ -377,29 +386,37 @@ def load_matriz(ws):
 
 
 def load_troubleshooting():
-    """({slug: [efectos]}, {slug: [{falla, mensaje}]}, nombre del Excel de fallas)."""
-    if TS_JSON.exists():
-        efectos = json.loads(TS_JSON.read_text(encoding="utf-8"))
-    else:
-        efectos = {}
-        for p in sorted(TS_DIR.glob("Matriz*.xlsx")):
-            for ws in openpyxl.load_workbook(p, data_only=True).worksheets:
-                if ws.title in TS_ESTACION:
-                    efectos[TS_ESTACION[ws.title]] = load_matriz(ws)
-                else:
-                    print(f"aviso: hoja '{ws.title}' de {p.name} sin estación en TS_ESTACION")
-    fallas, origen = {}, ""
-    for p in sorted(TS_DIR.glob("Fallas*.xlsx")):
-        origen = p.stem
+    """{slug: [efectos]} de las matrices causa-efecto, agrupados por categoría en el orden en que se muestran."""
+    efectos = {}
+    for p in sorted(TS_DIR.glob("Matriz*.xlsx")):
         for ws in openpyxl.load_workbook(p, data_only=True).worksheets:
-            if ws.title not in TS_ESTACION:
+            if ws.title in TS_ESTACION:
+                lista = load_matriz(ws)
+                orden = list(dict.fromkeys(e["categoria"] for e in lista))
+                efectos[TS_ESTACION[ws.title]] = sorted(lista, key=lambda e: orden.index(e["categoria"]))
+            else:
                 print(f"aviso: hoja '{ws.title}' de {p.name} sin estación en TS_ESTACION")
-                continue
-            lista = fallas.setdefault(TS_ESTACION[ws.title], {})
-            for falla, mensaje, *_ in ws.iter_rows(min_row=2, values_only=True):
-                if txt(falla):
-                    lista.setdefault(limpio(falla), {"falla": limpio(falla), "mensaje": limpio(mensaje)})
-    return efectos, {k: list(v.values()) for k, v in fallas.items()}, origen
+    return efectos
+
+
+def load_lineas():
+    """Tiempo disponible mensual (min) de la hoja Datos Maestros Actual: planta (sin SMD) y por línea de ANDON."""
+    xlsx = next(p for p in sorted(KPI_DIR.glob("KPI*.xlsx")) if not p.name.startswith("~$"))
+    ws = openpyxl.load_workbook(xlsx, data_only=True)["Datos Maestros Actual"]
+    maestro, filas = {}, ws.iter_rows(min_col=2, max_col=5, values_only=True)
+    for nombre, *_ in filas:  # hasta el encabezado "Linea de Producción"
+        if txt(nombre).lower().startswith("linea de produc"):
+            break
+    for nombre, *_, minutos in filas:
+        if not txt(nombre):
+            break
+        if isinstance(minutos, (int, float)) and not txt(nombre).upper().startswith("SMD"):
+            maestro[txt(nombre)] = minutos
+    faltan = {m for ms in LINEAS_ANDON.values() for m in ms} - set(maestro)
+    assert not faltan, f"líneas de LINEAS_ANDON que ya no están en Datos Maestros: {faltan}"
+    return {"origen": xlsx.name, "planta": sum(maestro.values()),
+            "lineas": {a: sum(maestro[m] for m in ms) for a, ms in LINEAS_ANDON.items()},
+            "maestro": {a: " + ".join(ms) for a, ms in LINEAS_ANDON.items()}}
 
 
 def qr_svg(url):
@@ -431,7 +448,7 @@ def build():
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(text, encoding="utf-8")
 
-    efectos, fallas, fallas_origen = load_troubleshooting()
+    efectos = load_troubleshooting()
     for m in machines:
         m["efectos"] = efectos.get(m["slug"], [])
 
@@ -444,19 +461,23 @@ def build():
         if base_url:
             write(f"qr/{m['slug']}.svg", qr_svg(m["url"]))
     write("qr/index.html", env.get_template("qr.html").render(machines=machines, base_url=base_url))
-    write("admin/index.html", env.get_template("admin.html").render(
-        machines=machines, fallas_origen=fallas_origen, repo=os.environ.get("GITHUB_REPOSITORY", "")))
-    # el administrador parte de lo publicado; el Excel de fallas solo se consulta ahí
-    write("troubleshooting.json", json.dumps({m["slug"]: m["efectos"] for m in machines}, ensure_ascii=False, indent=1))
-    write("fallas.json", json.dumps(fallas, ensure_ascii=False))
-    shutil.copy(BASE / "templates" / "asistente.js", OUT / "asistente.js")
+    lineas = load_lineas()
+    write("lineas.json", json.dumps(lineas, ensure_ascii=False))
+    shutil.copy(ANDON_JSON, OUT / "andon.json")
+    # el token (secret ANDON_TOKEN) queda visible en la página: fine-grained, solo este repositorio, solo Contents
+    write("kpi/index.html", env.get_template("kpi.html").render(
+        lineas=lineas, repo=os.environ.get("GITHUB_REPOSITORY", ""), token=os.environ.get("ANDON_TOKEN", ""),
+        ruta=ANDON_JSON.relative_to(BASE).as_posix()))
+    for js in ("asistente.js", "andon.js"):
+        shutil.copy(BASE / "templates" / js, OUT / js)
     shutil.copy(BASE / "templates" / "logo.png", OUT / "logo.png")  # cabecera y favicon
-    # datos de la consulta sobre hpm: un solo archivo para buscar por estación o en todas
+    # datos de la consulta por estación (HPM y troubleshooting): un solo archivo para buscar en una o en todas
     pasos = [{"e": m["slug"], "sec": s["nombre"], **{k: v for k, v in p.items() if k != "figs"}}
              for m in machines for s in m["secciones"] for p in s["pasos"]]
+    fallas = [{"e": m["slug"], "n": i, **e} for m in machines for i, e in enumerate(m["efectos"], 1)]
     write("hpm.json", json.dumps({"leyenda": next((m["leyenda"] for m in machines if m["leyenda"]), ""),
                                   "estaciones": [{"slug": m["slug"], "nombre": m["info"]["equipo"]} for m in machines],
-                                  "pasos": pasos}, ensure_ascii=False))
+                                  "pasos": pasos, "fallas": fallas}, ensure_ascii=False))
     write(".nojekyll", "")  # GitHub Pages: servir tal cual, sin Jekyll
     return machines
 

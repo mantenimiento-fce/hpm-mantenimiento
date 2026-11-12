@@ -1,10 +1,13 @@
 {% from "_iconos.html" import icono %}
-<section class="panel consulta" aria-labelledby="consulta-t" data-raiz="{{ raiz }}" data-estacion="{{ estacion }}">
-  <label class="consulta-label" id="consulta-t" for="consulta-q">Consulta sobre {{ nombre or "hpm" }}</label>
+{# modo: "estacion" (HPM y troubleshooting), "general" (estaciones y KPIs) o "kpi" (solo KPIs) #}
+{% set modo = modo or "estacion" %}
+<section class="panel consulta" aria-labelledby="consulta-t" data-raiz="{{ raiz }}" data-estacion="{{ estacion }}" data-modo="{{ modo }}">
+  <label class="consulta-label" id="consulta-t" for="consulta-q">{% if modo == "kpi" %}Consulta sobre KPIs{% elif nombre %}Consulta sobre {{ nombre }}{% else %}Consulta{% endif %}</label>
   <div class="input-wrap">
     {{ icono("search") }}
-    <input class="input" id="consulta-q" type="search" autocomplete="off" placeholder="Ej. cada cuándo se lubrican los carros">
+    <input class="input" id="consulta-q" type="search" autocomplete="off" placeholder="{% if modo == 'kpi' %}Ej. MTTR de octubre en Honda 25SA{% elif modo == 'general' %}Ej. BDR de octubre o cada cuándo se lubrican los carros{% else %}Ej. cada cuándo se lubrican los carros o no enciende{% endif %}">
   </div>
   <div id="consulta-res" aria-live="polite"></div>
 </section>
+{% if modo != "estacion" %}<script src="{{ raiz }}andon.js" defer></script>{% endif %}
 <script src="{{ raiz }}asistente.js" defer></script>

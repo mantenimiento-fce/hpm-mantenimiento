@@ -30,21 +30,34 @@
   .estaciones a:hover .icon { transform: translateX(var(--sp-1)); }
 
   .herramientas { margin-top: var(--sp-5); }
-  .admin-link { padding-top: var(--sp-5); border-top: 1px solid var(--c-line); }
-  .admin-link .btn { padding-left: 0; padding-right: var(--sp-3); }
-  .herramientas p { font-size: var(--fs-sm); color: var(--c-muted); margin-top: var(--sp-2); }
+
+  /* acceso a indicadores: resumen del mes más reciente */
+  .kpi-acceso { display: block; margin-bottom: var(--sp-6); padding: var(--sp-5); color: inherit; text-decoration: none;
+                border-top: 4px solid var(--c-blue); transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease); }
+  .kpi-acceso:hover { background: var(--c-blue-tint); }
+  .kpi-acceso-t { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+  .kpi-acceso-t h2 { font-size: var(--fs-xl); }
+  .kpi-acceso-t .icon { color: var(--c-blue); transition: transform var(--dur) var(--ease); }
+  .kpi-acceso:hover .kpi-acceso-t .icon { transform: translateX(var(--sp-1)); }
+  .kpi-mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); margin: var(--sp-4) 0 0; }
+  .kpi-mini dt { font-size: var(--fs-xs); font-weight: 600; letter-spacing: var(--tracking-caps); color: var(--c-muted); }
+  .kpi-mini dd { margin: 0; font: 700 var(--fs-xl)/1.1 var(--font-display); color: var(--c-ink); font-variant-numeric: tabular-nums; }
+  .kpi-mini dd small { display: block; font: 500 var(--fs-xs)/1.4 var(--font-body); color: var(--c-muted); }
 </style>
 {% endblock %}
 {% block content %}
 <div class="wrap">
   <section class="intro">
-    <p class="eyebrow">Departamento de Mantenimiento</p>
-    <h1>Hojas de mantenimiento preventivo</h1>
-    <p class="lead">Seleccione la estación para consultar su hoja HPM: pasos, criterios, contramedidas e imágenes de cada punto.</p>
+    <p class="eyebrow">Forvia San Juan del Río</p>
+    <h1>Departamento de Mantenimiento</h1>
   </section>
 
   <div class="portada">
     <section aria-labelledby="est-t">
+      <a class="panel kpi-acceso" href="kpi/">
+        <div class="kpi-acceso-t"><div><p class="eyebrow" id="kpi-periodo">Indicadores</p><h2>BDR · MTTR · MTBF</h2></div>{{ icono("arrow-right") }}</div>
+        <dl class="kpi-mini" id="kpi-mini" hidden></dl>
+      </a>
       <div class="bloque-t"><h2 id="est-t">Estaciones</h2><span class="eyebrow">{{ machines|length }} en total</span></div>
       <ol class="estaciones">
         {% for m in machines %}
@@ -56,17 +69,25 @@
       </ol>
       <div class="herramientas">
         <a class="btn btn-secondary" href="qr/">{{ icono("qr") }} Imprimir códigos QR</a>
-        <p>Etiquetas para pegar en cada estación; al escanearlas abren su hoja.</p>
-      </div>
-      <div class="herramientas admin-link">
-        <a class="btn btn-ghost" href="admin/">{{ icono("settings") }} Administrador de troubleshooting</a>
-        <p>Provisional: para capturar efectos y causas mientras se completa la información.</p>
       </div>
     </section>
 
     <aside>
-      {% with raiz="", estacion="" %}{% include "_consulta.html" %}{% endwith %}
+      {% with raiz="", estacion="", modo="general" %}{% include "_consulta.html" %}{% endwith %}
     </aside>
   </div>
 </div>
+<script>
+  // resumen del mes más reciente en el acceso a indicadores (andon.js lo carga _consulta.html)
+  addEventListener('DOMContentLoaded', () => ANDON.cargar('').then(({ registros, lineas }) => {
+    const M = ANDON.crearModelo(registros, lineas), anio = +M.ultima.slice(0, 4), mes = +M.ultima.slice(5, 7);
+    const k = M.calcular({ anio, mes }), f = (x, d) => x == null ? '—' : x.toLocaleString('es-MX', { maximumFractionDigits: d, minimumFractionDigits: d });
+    const fila = (t, v, u, ok) => `<div><dt>${t}</dt><dd>${v}<small>${u} · ${ok ? 'en meta' : 'fuera de meta'}</small></dd></div>`;
+    document.getElementById('kpi-periodo').textContent = `Indicadores · ${ANDON.MESES[mes - 1]} ${anio}`;
+    const mini = document.getElementById('kpi-mini');
+    mini.innerHTML = fila('BDR', f(k.bdr, 2), '%', k.bdr <= ANDON.METAS.bdr) + fila('MTTR', f(k.mttr, 1), 'min', k.mttr <= ANDON.METAS.mttr)
+                   + fila('MTBF', f(k.mtbf, 1), 'h', k.mtbf >= ANDON.METAS.mtbf);
+    mini.hidden = false;
+  }).catch(() => {}));
+</script>
 {% endblock %}

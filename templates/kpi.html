@@ -1,0 +1,446 @@
+{% extends "base.html" %}
+{% from "_iconos.html" import icono %}
+{% set raiz = "../" %}
+{% block title %}Indicadores · Mantenimiento{% endblock %}
+{% block cabecera %}
+<a class="btn btn-ghost btn-icon" href="../" aria-label="Inicio" title="Inicio">{{ icono("arrow-left") }}</a>
+<div class="top-titulo"><h1>Indicadores de mantenimiento</h1><p>BDR · MTTR · MTBF · reportes ANDON</p></div>
+<div class="top-acciones"><a class="btn btn-secondary" href="#datos" title="Actualizar datos">{{ icono("upload") }}<span class="btn-txt">Actualizar datos</span></a></div>
+{% endblock %}
+{% block head %}
+<style>
+  .dash { max-width: 1280px; }
+  .dash section + section { margin-top: var(--sp-7); }
+  .bloque-t { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--sp-2) var(--sp-4);
+              margin-bottom: var(--sp-4); padding-bottom: var(--sp-2); border-bottom: 2px solid var(--c-ink); }
+  .bloque-t h2 { font-size: var(--fs-lg); text-transform: uppercase; letter-spacing: .02em; }
+
+  /* filtros en una fila sobre todo lo demás */
+  .filtros { position: sticky; top: var(--header-h); z-index: 10; display: flex; flex-wrap: wrap; align-items: end; gap: var(--sp-3) var(--sp-4);
+             margin: 0 calc(var(--gutter) * -1) var(--sp-5); padding: var(--sp-3) var(--gutter);
+             background: var(--c-paper); border-bottom: 1px solid var(--c-line); }
+  .filtros .campo-form { min-width: 150px; flex: 1 1 150px; max-width: 240px; }
+  .filtros .campo-form.linea { max-width: 300px; flex-basis: 200px; }
+  .filtros .estado { flex: 10 1 260px; display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: flex-end; align-items: center;
+                     font-size: var(--fs-sm); color: var(--c-muted); padding-bottom: var(--sp-3); }
+  .chip { display: inline-flex; align-items: center; gap: var(--sp-1); padding: 2px var(--sp-2); border-radius: var(--r-sm);
+          border: 1px solid var(--c-line); background: var(--c-surface); font-size: var(--fs-xs); white-space: nowrap; }
+  .chip .icon { width: 14px; height: 14px; }
+  .chip.aviso { border-color: var(--c-amber); background: var(--c-amber-tint); color: var(--c-amber-ink); }
+
+  /* tarjetas */
+  .tiles { display: grid; gap: var(--sp-3); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (min-width: 720px) { .tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  .tile { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+  .tile.principal { border-top: 4px solid var(--c-blue); }
+  .tile-v { font: 700 var(--fs-2xl)/1 var(--font-display); color: var(--c-ink); font-variant-numeric: tabular-nums; }
+  .tile-v small { font: 600 var(--fs-md)/1 var(--font-display); color: var(--c-muted); margin-left: 2px; }
+  .tile-meta { font-size: var(--fs-xs); color: var(--c-muted); }
+  .tile-delta { font-size: var(--fs-xs); color: var(--c-muted); min-height: 1.4em; }
+  .estado-meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-start; margin-top: var(--sp-1);
+                 padding: 2px var(--sp-2); border-radius: var(--r-sm); font-size: var(--fs-xs); font-weight: 600; }
+  .estado-meta .icon { width: 14px; height: 14px; }
+  .estado-meta.ok { background: var(--c-success-tint); color: var(--c-success); }
+  .estado-meta.mal { background: var(--c-danger-tint); color: var(--c-danger); }
+  .estado-meta.na { background: var(--c-sunk); color: var(--c-muted); }
+  .mejor { color: var(--c-success); } .peor { color: var(--c-danger); }
+
+  /* gráficas */
+  .graficas { display: grid; gap: var(--sp-4); }
+  @media (min-width: 900px) { .graficas.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+                              .graficas.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .grafica { padding: var(--sp-4); min-width: 0; }
+  .grafica h3 { font-size: var(--fs-md); }
+  .grafica p.sub { font-size: var(--fs-xs); color: var(--c-muted); margin-top: 2px; }
+  .lienzo { position: relative; height: 240px; margin-top: var(--sp-3); }
+  .lienzo.alto { height: 340px; }
+  .vacio { display: grid; place-items: center; height: 100%; color: var(--c-muted); font-size: var(--fs-sm); text-align: center; }
+  .grafica-t { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--sp-2); }
+  .segmentos { display: inline-flex; border: 1px solid var(--c-line-strong); border-radius: var(--r-md); overflow: hidden; }
+  .segmentos button { min-height: 36px; padding: 0 var(--sp-3); border: 0; background: var(--c-surface); color: var(--c-ink);
+                      font: 600 var(--fs-sm)/1 var(--font-body); cursor: pointer; transition: background-color var(--dur) var(--ease); }
+  .segmentos button + button { border-left: 1px solid var(--c-line); }
+  .segmentos button:hover { background: var(--c-blue-tint); }
+  .segmentos button[aria-pressed="true"] { background: var(--c-ink); color: var(--c-on-dark); }
+  .segmentos button:focus-visible { outline-offset: -3px; }
+
+  details.tabla { margin-top: var(--sp-3); }
+  details.tabla summary { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: var(--tap); cursor: pointer;
+                          font-size: var(--fs-sm); font-weight: 600; color: var(--c-blue); }
+  .tabla-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  th, td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--c-line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-size: var(--fs-xs); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--c-muted); font-weight: 600; }
+
+  /* actualizar datos */
+  .datos-grid { display: grid; gap: var(--sp-4); align-items: start; }
+  @media (min-width: 900px) { .datos-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
+  .carga { padding: var(--sp-5); }
+  .zona { display: grid; place-items: center; gap: var(--sp-2); padding: var(--sp-6) var(--sp-4); text-align: center; cursor: pointer;
+          border: 2px dashed var(--c-line-strong); border-radius: var(--r-lg); background: var(--c-paper-hi);
+          transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease); }
+  .zona:hover, .zona.sobre { border-color: var(--c-blue); background: var(--c-blue-tint); }
+  .zona:focus-within { box-shadow: var(--focus-ring); }
+  .zona .icon { width: 32px; height: 32px; color: var(--c-blue); }
+  .zona b { font: 700 var(--fs-lg)/1.2 var(--font-display); color: var(--c-ink); }
+  .zona span { font-size: var(--fs-sm); color: var(--c-muted); }
+  .resultado { margin-top: var(--sp-4); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); font-size: var(--fs-sm); }
+  .resultado.ok { background: var(--c-success-tint); color: var(--c-success); }
+  .resultado.error { background: var(--c-danger-tint); color: var(--c-danger); }
+  .resultado.cargando { background: var(--c-blue-tint); color: var(--c-ink); }
+  .pendientes { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); padding-top: var(--sp-4);
+                border-top: 1px solid var(--c-line); }
+  .pendientes p { flex: 1 1 220px; font-size: var(--fs-sm); }
+  .consulta-kpi-wrap .consulta { height: 100%; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+{% endblock %}
+{% block content %}
+<div class="wrap dash">
+  <form class="filtros" aria-label="Filtros" onsubmit="return false">
+    <div class="campo-form"><label for="f-anio">Año</label><select class="input" id="f-anio"></select></div>
+    <div class="campo-form"><label for="f-mes">Periodo</label><select class="input" id="f-mes"></select></div>
+    <div class="campo-form linea"><label for="f-linea">Línea</label><select class="input" id="f-linea"></select></div>
+    <div class="estado" id="estado" aria-live="polite"></div>
+  </form>
+
+  <section aria-labelledby="t-resumen">
+    <h2 class="sr-only" id="t-resumen">Resumen del periodo</h2>
+    <div class="tiles" id="tiles"><p class="panel tile muted">Cargando datos…</p></div>
+  </section>
+
+  <section aria-labelledby="t-tendencia">
+    <div class="bloque-t"><h2 id="t-tendencia">Tendencia mensual</h2><span class="eyebrow" id="sub-tendencia"></span></div>
+    <div class="graficas tres">
+      <div class="panel grafica"><h3>BDR</h3><p class="sub">% del tiempo disponible perdido por fallas · menor es mejor</p><div class="lienzo"><canvas id="g-bdr" role="img" aria-label="BDR por mes"></canvas></div></div>
+      <div class="panel grafica"><h3>MTTR</h3><p class="sub">Minutos por falla: espera del técnico + reparación · menor es mejor</p><div class="lienzo"><canvas id="g-mttr" role="img" aria-label="MTTR por mes"></canvas></div></div>
+      <div class="panel grafica"><h3>MTBF</h3><p class="sub">Horas de operación entre fallas · mayor es mejor</p><div class="lienzo"><canvas id="g-mtbf" role="img" aria-label="MTBF por mes"></canvas></div></div>
+    </div>
+    <details class="tabla"><summary>{{ icono("chevron-down") }} Ver tabla mensual</summary>
+      <div class="panel tabla-wrap"><table><thead><tr><th>Mes</th><th>Fallas</th><th>Paro (min)</th><th>BDR %</th><th>MTTR (min)</th><th>Espera (min)</th><th>Reparación (min)</th><th>MTBF (h)</th><th>Por validar</th></tr></thead><tbody id="tabla-mensual"></tbody></table></div>
+    </details>
+  </section>
+
+  <section aria-labelledby="t-lineas">
+    <div class="bloque-t"><h2 id="t-lineas">Por línea</h2><span class="eyebrow" id="sub-lineas"></span></div>
+    <div class="panel grafica">
+      <div class="grafica-t"><h3 id="g-lineas-t">BDR por línea</h3>
+        <div class="segmentos" role="group" aria-label="Indicador" id="seg-lineas">
+          <button type="button" data-k="bdr" aria-pressed="true">BDR</button><button type="button" data-k="mttr" aria-pressed="false">MTTR</button>
+          <button type="button" data-k="mtbf" aria-pressed="false">MTBF</button><button type="button" data-k="fallas" aria-pressed="false">Fallas</button>
+        </div></div>
+      <p class="sub muted">Seleccione una barra para filtrar por esa línea</p>
+      <div class="lienzo alto" id="lienzo-lineas"><canvas id="g-lineas" role="img" aria-label="Indicador por línea"></canvas></div>
+      <details class="tabla"><summary>{{ icono("chevron-down") }} Ver tabla por línea</summary>
+        <div class="tabla-wrap"><table><thead><tr><th>Línea</th><th>Fallas</th><th>Paro (min)</th><th>Disponible (min)</th><th>BDR %</th><th>MTTR (min)</th><th>MTBF (h)</th></tr></thead><tbody id="tabla-lineas"></tbody></table></div>
+      </details>
+    </div>
+  </section>
+
+  <section aria-labelledby="t-detalle">
+    <div class="bloque-t"><h2 id="t-detalle">Dónde se pierde el tiempo</h2><span class="eyebrow" id="sub-detalle"></span></div>
+    <div class="graficas dos">
+      <div class="panel grafica"><h3>Tipo de falla</h3><p class="sub">Minutos de paro por falla confirmada</p><div class="lienzo alto"><canvas id="g-fallas" role="img" aria-label="Minutos de paro por tipo de falla"></canvas></div></div>
+      <div class="panel grafica"><h3>Máquinas</h3><p class="sub">Las 10 con más minutos de paro</p><div class="lienzo alto"><canvas id="g-maquinas" role="img" aria-label="Máquinas con más minutos de paro"></canvas></div></div>
+    </div>
+    <div class="graficas dos" style="margin-top: var(--sp-4)">
+      <div class="panel grafica"><h3>Por turno</h3>
+        <div class="tabla-wrap"><table><thead><tr><th>Turno</th><th>Fallas</th><th>Paro (min)</th><th>MTTR (min)</th><th>Espera %</th></tr></thead><tbody id="tabla-turnos"></tbody></table></div></div>
+      <div class="consulta-kpi-wrap">{% with raiz="../", estacion="", modo="kpi" %}{% include "_consulta.html" %}{% endwith %}</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="t-datos" id="datos">
+    <div class="bloque-t"><h2 id="t-datos">Actualizar datos</h2><span class="eyebrow" id="sub-datos"></span></div>
+    <div class="datos-grid">
+      <div class="panel carga">
+        <label class="zona" id="zona">{{ icono("file") }}<b>Subir CSV de ANDON</b><span>Reportes de mantenimiento · arrastre el archivo aquí o selecciónelo</span>
+          <input class="sr-only" type="file" id="archivo" accept=".csv,text/csv"></label>
+        <p class="resultado" id="resultado" role="status" hidden></p>
+        <div class="pendientes" id="pendientes" hidden>
+          <p id="pendientes-t"></p>
+          {% if token and repo %}<button class="btn btn-primary" type="button" id="publicar">{{ icono("upload") }} Publicar</button>
+          {% else %}<button class="btn btn-primary" type="button" id="descargar">{{ icono("download") }} Descargar andon.json</button>{% endif %}
+          <button class="btn btn-ghost" type="button" id="descartar">{{ icono("undo") }} Descartar</button>
+        </div>
+      </div>
+      <details class="panel carga tabla"><summary>{{ icono("chevron-down") }} Tiempo disponible por línea</summary>
+        <p class="sub muted" style="font-size: var(--fs-xs)">{{ lineas.origen }} · hoja Datos Maestros Actual · min/mes</p>
+        <div class="tabla-wrap"><table><thead><tr><th>Línea ANDON</th><th>Datos Maestros</th><th>Min/mes</th></tr></thead><tbody>
+          {% for l, v in lineas.lineas.items() %}<tr><td>{{ l }}</td><td>{{ lineas.maestro[l] }}</td><td>{{ "{:,.0f}".format(v) }}</td></tr>{% endfor %}
+          <tr><th>Planta (sin SMD)</th><td></td><th>{{ "{:,.0f}".format(lineas.planta) }}</th></tr>
+        </tbody></table></div>
+      </details>
+    </div>
+  </section>
+</div>
+
+<div id="cfg" hidden data-repo="{{ repo }}" data-token="{{ token }}" data-ruta="{{ ruta }}"></div>
+<script>
+addEventListener('DOMContentLoaded', () => {
+  const A = window.ANDON, $ = id => document.getElementById(id), cfg = $('cfg').dataset;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  // colores validados (dataviz validate_palette): serie principal y segunda serie
+  const C = { s1: '#2f4fe0', s2: '#b07c00', tinta: css('--c-ink'), muted: css('--c-muted'), linea: css('--c-line'), sup: css('--c-surface') };
+  const MES3 = A.MESES.map(m => m.slice(0, 3));
+  const fmt = (x, d = 1) => x == null || !isFinite(x) ? '—' : x.toLocaleString('es-MX', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const ent = x => x == null ? '—' : Math.round(x).toLocaleString('es-MX');
+  const el = (tag, props = {}, ...hijos) => { const e = Object.assign(document.createElement(tag), props); e.append(...hijos); return e; };
+  const icono = n => document.querySelector(`#iconos [data-i="${n}"]`).innerHTML;
+
+  let D, M, graficas = {}, metricaLinea = 'bdr';
+  const f = () => ({ anio: +$('f-anio').value, mes: +$('f-mes').value || null, linea: $('f-linea').value || null });
+
+  // ---------------------------------------------------------------- filtros
+  function opciones(sel, lista, valor) {
+    sel.replaceChildren(...lista.map(([v, t]) => el('option', { value: v, textContent: t })));
+    if (lista.some(([v]) => String(v) === String(valor))) sel.value = valor;
+  }
+  function llenarFiltros(conservar) {
+    const prev = conservar ? f() : null, uA = +M.ultima.slice(0, 4), uM = +M.ultima.slice(5, 7);
+    opciones($('f-anio'), M.anios.map(a => [a, a]), prev ? prev.anio : uA);
+    llenarMeses(prev ? prev.mes || '' : uM);
+    opciones($('f-linea'), [['', 'Toda la planta'], ...M.lineasConDatos.map(l => [l, l])], prev ? prev.linea || '' : '');
+  }
+  function llenarMeses(valor) {
+    const a = +$('f-anio').value;
+    opciones($('f-mes'), [['', 'Todo el año'], ...A.MESES.map((m, i) => [i + 1, m]).filter(([i]) => M.fraccion(a, i) > 0)], valor);
+  }
+  $('f-anio').addEventListener('change', () => { llenarMeses($('f-mes').value); pintar(); });
+  $('f-mes').addEventListener('change', pintar);
+  $('f-linea').addEventListener('change', pintar);
+
+  // ---------------------------------------------------------------- tarjetas
+  function tarjetas(k, prev, etiquetaPrev) {
+    const T = [
+      { id: 'bdr', t: 'BDR', v: k.bdr, d: 2, u: '%', meta: A.METAS.bdr, menor: true, metaT: `Meta ≤ ${A.METAS.bdr} %` },
+      { id: 'mttr', t: 'MTTR', v: k.mttr, d: 1, u: 'min', meta: A.METAS.mttr, menor: true, metaT: `Meta ≤ ${A.METAS.mttr} min` },
+      { id: 'mtbf', t: 'MTBF', v: k.mtbf, d: 1, u: 'h', meta: A.METAS.mtbf, menor: false, metaT: `Meta ≥ ${A.METAS.mtbf} h` },
+      { id: 'fallas', t: 'Fallas', v: k.fallas, d: 0, u: '', menor: true, metaT: k.porValidar ? `${k.porValidar} de más de 8 h fuera, por validar` : 'Paros por falla de equipo' },
+      { id: 'paro', t: 'Tiempo de paro', v: k.paro, d: 0, u: 'min', menor: true, metaT: k.fallas ? `Espera ${fmt(k.loc / k.paro * 100, 0)} % · reparación ${fmt(k.rep / k.paro * 100, 0)} %` : '' },
+    ];
+    $('tiles').replaceChildren(...T.map(x => {
+      const tile = el('article', { className: 'panel tile' + (x.meta ? ' principal' : '') });
+      const v = el('p', { className: 'tile-v' }, x.v == null ? '—' : fmt(x.v, x.d));
+      if (x.u && x.v != null) v.append(el('small', { textContent: x.u }));
+      tile.append(el('p', { className: 'eyebrow', textContent: x.t }), v, el('p', { className: 'tile-meta', textContent: x.metaT }));
+      if (x.meta) {
+        const ok = x.v != null && (x.menor ? x.v <= x.meta : x.v >= x.meta);
+        const s = el('p', { className: 'estado-meta ' + (x.v == null ? 'na' : ok ? 'ok' : 'mal') });
+        s.innerHTML = x.v == null ? 'Sin tiempo disponible' : icono(ok ? 'check' : 'alert') + (ok ? 'En meta' : 'Fuera de meta');
+        tile.append(s);
+      }
+      const p = prev && prev[x.id];
+      const delta = el('p', { className: 'tile-delta' });
+      if (p != null && x.v != null && prev.fallas) {
+        const dif = x.v - p, mejor = x.menor ? dif < 0 : dif > 0;
+        delta.append(`${dif > 0 ? '▲' : dif < 0 ? '▼' : '='} ${fmt(Math.abs(dif), x.d)} vs ${etiquetaPrev} `);
+        if (dif) delta.append(el('span', { className: mejor ? 'mejor' : 'peor', textContent: mejor ? '(mejor)' : '(peor)' }));
+      }
+      tile.append(delta);
+      return tile;
+    }));
+  }
+
+  // ---------------------------------------------------------------- gráficas (Chart.js)
+  // línea de meta punteada con su etiqueta, sobre el eje de valores
+  const pluginMeta = { id: 'meta', afterDatasetsDraw(c, _, o) {
+    if (o.valor == null) return;
+    const h = c.options.indexAxis === 'y', esc = h ? c.scales.x : c.scales.y, p = esc.getPixelForValue(o.valor), a = c.chartArea, ctx = c.ctx;
+    if (h ? p < a.left || p > a.right : p < a.top || p > a.bottom) return;
+    ctx.save(); ctx.strokeStyle = C.tinta; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]); ctx.beginPath();
+    if (h) { ctx.moveTo(p, a.top); ctx.lineTo(p, a.bottom); } else { ctx.moveTo(a.left, p); ctx.lineTo(a.right, p); }
+    ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = C.tinta; ctx.font = '600 11px "IBM Plex Sans", sans-serif';
+    if (h) { ctx.textAlign = 'left'; ctx.fillText(o.texto, p + 4, a.top + 10); } else { ctx.textAlign = 'right'; ctx.fillText(o.texto, a.right, p - 5); }
+    ctx.restore();
+  } };
+  function base(opc) {
+    return {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 250 },
+      interaction: { mode: 'nearest', intersect: false, axis: opc.indexAxis === 'y' ? 'y' : 'x' },
+      plugins: { legend: { display: !!opc.leyenda, position: 'bottom', labels: { boxWidth: 12, boxHeight: 12, color: C.muted } },
+                 tooltip: { backgroundColor: C.tinta, padding: 10, cornerRadius: 6, callbacks: opc.tooltip || {} },
+                 meta: opc.meta || {} },
+      scales: {
+        x: { stacked: !!opc.apilado, grid: { display: opc.indexAxis === 'y', color: C.linea }, border: { display: false }, ticks: { color: C.muted }, ...(opc.indexAxis === 'y' ? { beginAtZero: true, suggestedMax: opc.metaMax } : {}) },
+        y: { stacked: !!opc.apilado, grid: { display: opc.indexAxis !== 'y', color: C.linea }, border: { display: false }, ticks: { color: C.muted, autoSkip: false }, ...(opc.indexAxis === 'y' ? {} : { beginAtZero: true, suggestedMax: opc.metaMax }) },
+      },
+      indexAxis: opc.indexAxis || 'x', onClick: opc.onClick,
+      onHover: (e, els) => { e.native.target.style.cursor = opc.onClick && els.length ? 'pointer' : 'default'; },
+    };
+  }
+  function grafica(id, tipo, data, opc) {
+    if (!window.Chart) return;
+    Chart.defaults.font.family = '"IBM Plex Sans", "Segoe UI", sans-serif';
+    const cfgG = { type: tipo, data, options: base(opc), plugins: [pluginMeta] };
+    if (graficas[id]) { graficas[id].data = data; graficas[id].options = cfgG.options; graficas[id].update(); }
+    else graficas[id] = new Chart($(id), cfgG);
+  }
+  // el mes elegido resalta; los demás se atenúan
+  const tono = (color, serie, mes) => serie.map(s => !mes || s.mes === mes ? color : color + '55');
+  const barra = { borderRadius: 4, borderSkipped: 'start', maxBarThickness: 36, borderColor: C.sup, borderWidth: { top: 0, left: 0, right: 0, bottom: 0 } };
+
+  function tendencia(F) {
+    const s = M.serie(F.anio, F.linea).map(x => x.conDatos ? x : { ...x, bdr: null, mttr: null, mtbf: null, fallas: null });
+    // clic en un mes lo selecciona; otro clic en el mismo vuelve al año completo
+    const clic = (_, els) => { if (els.length) { const m = String(els[0].index + 1); $('f-mes').value = $('f-mes').value === m ? '' : m; pintar(); } };
+    const tip = (u, d) => ({ label: c => `${c.dataset.label}: ${fmt(c.parsed.y, d)} ${u}`, afterBody: cs => { const x = s[cs[0].dataIndex]; return x.fallas ? [`${x.fallas} fallas · ${ent(x.paro)} min de paro`] : []; } });
+    grafica('g-bdr', 'bar', { labels: MES3, datasets: [{ label: 'BDR', data: s.map(x => x.bdr), backgroundColor: tono(C.s1, s, F.mes), ...barra }] },
+      { meta: { valor: A.METAS.bdr, texto: `Meta ${A.METAS.bdr} %` }, metaMax: A.METAS.bdr * 1.2, onClick: clic, tooltip: tip('%', 2) });
+    grafica('g-mttr', 'bar', { labels: MES3, datasets: [
+      { label: 'Espera del técnico', data: s.map(x => x.fallas ? x.loc / x.fallas : null), backgroundColor: tono(C.s1, s, F.mes), ...barra, borderRadius: 0, borderWidth: { top: 2 } },
+      { label: 'Reparación', data: s.map(x => x.fallas ? x.rep / x.fallas : null), backgroundColor: tono(C.s2, s, F.mes), ...barra }] },
+      { apilado: true, leyenda: true, meta: { valor: A.METAS.mttr, texto: `Meta ${A.METAS.mttr} min` }, metaMax: A.METAS.mttr * 1.2, onClick: clic,
+        tooltip: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} min`, footer: cs => { const x = s[cs[0].dataIndex]; return x.fallas ? `MTTR ${fmt(x.mttr)} min · ${x.fallas} fallas` : ''; } } });
+    grafica('g-mtbf', 'bar', { labels: MES3, datasets: [{ label: 'MTBF', data: s.map(x => x.mtbf), backgroundColor: tono(C.s1, s, F.mes), ...barra }] },
+      { meta: { valor: A.METAS.mtbf, texto: `Meta ${A.METAS.mtbf} h` }, metaMax: A.METAS.mtbf * 1.2, onClick: clic, tooltip: tip('h', 1) });
+    $('tabla-mensual').replaceChildren(...s.filter(x => x.conDatos).map(x => el('tr', {},
+      ...[A.MESES[x.mes - 1], ent(x.fallas), ent(x.paro), fmt(x.bdr, 2), fmt(x.mttr), fmt(x.fallas ? x.loc / x.fallas : null), fmt(x.fallas ? x.rep / x.fallas : null), fmt(x.mtbf), x.porValidar || '']
+        .map(v => el('td', { textContent: v })))));
+  }
+
+  const METRICAS = { bdr: ['BDR por línea', '%', 2, A.METAS.bdr, true], mttr: ['MTTR por línea', 'min', 1, A.METAS.mttr, true],
+                     mtbf: ['MTBF por línea', 'h', 1, A.METAS.mtbf, false], fallas: ['Fallas por línea', '', 0, null, true] };
+  function porLinea(F) {
+    const g = M.grupos({ ...F, linea: null }, 'lin');
+    const [titulo, u, d, meta, menor] = METRICAS[metricaLinea];
+    const filas = g.filter(x => x[metricaLinea] != null && x.fallas).sort((a, b) => menor ? b[metricaLinea] - a[metricaLinea] : a[metricaLinea] - b[metricaLinea]);
+    $('g-lineas-t').textContent = titulo;
+    $('lienzo-lineas').style.height = Math.max(200, filas.length * 30 + 60) + 'px';
+    grafica('g-lineas', 'bar', { labels: filas.map(x => x.nombre), datasets: [{ label: titulo, data: filas.map(x => x[metricaLinea]),
+        backgroundColor: filas.map(x => !F.linea || x.nombre === F.linea ? C.s1 : C.s1 + '55'), ...barra, maxBarThickness: 22 }] },
+      { indexAxis: 'y', meta: meta == null ? {} : { valor: meta, texto: `Meta ${meta}${u ? ' ' + u : ''}` }, metaMax: meta && meta * 1.2,
+        onClick: (_, els) => { if (els.length) { const l = filas[els[0].index].nombre; $('f-linea').value = $('f-linea').value === l ? '' : l; pintar(); } },
+        tooltip: { label: c => `${titulo.split(' ')[0]}: ${fmt(c.parsed.x, d)} ${u}`, afterBody: cs => { const x = filas[cs[0].dataIndex]; return [`${x.fallas} fallas · ${ent(x.paro)} min de paro`, x.loading ? `Disponible: ${ent(x.loading)} min` : 'Sin tiempo disponible en Datos Maestros']; } } });
+    $('tabla-lineas').replaceChildren(...g.map(x => el('tr', {}, ...[x.nombre, ent(x.fallas), ent(x.paro), ent(x.loading), fmt(x.bdr, 2), fmt(x.mttr), fmt(x.mtbf)].map(v => el('td', { textContent: v })))));
+  }
+  $('seg-lineas').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    metricaLinea = b.dataset.k;
+    $('seg-lineas').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    porLinea(f());
+  });
+
+  function horizontal(id, filas, etiqueta) {
+    grafica(id, 'bar', { labels: filas.map(etiqueta), datasets: [{ label: 'Minutos de paro', data: filas.map(x => x.paro), backgroundColor: C.s1, ...barra, maxBarThickness: 22 }] },
+      { indexAxis: 'y', tooltip: { label: c => `Paro: ${ent(c.parsed.x)} min`, afterBody: cs => { const x = filas[cs[0].dataIndex]; return [`${x.fallas} fallas · MTTR ${fmt(x.mttr)} min`]; } } });
+  }
+  const corto = s => s.length > 34 ? s.slice(0, 32) + '…' : s;
+
+  function pintar() {
+    const F = f();
+    const k = M.calcular(F);
+    // comparación: mes anterior, o el año anterior si se ve el año completo
+    const pF = F.mes ? (F.mes === 1 ? { ...F, anio: F.anio - 1, mes: 12 } : { ...F, mes: F.mes - 1 }) : { ...F, anio: F.anio - 1 };
+    const prev = M.fraccion(pF.anio, pF.mes || 12) > 0 || (!F.mes && M.anios.includes(pF.anio)) ? M.calcular(pF) : null;
+    tarjetas(k, prev, F.mes ? A.MESES[pF.mes - 1].toLowerCase() : pF.anio);
+    const periodo = `${F.mes ? A.MESES[F.mes - 1] + ' ' : ''}${F.anio}${F.linea ? ' · ' + F.linea : ' · toda la planta'}`;
+    $('sub-tendencia').textContent = `${F.anio}${F.linea ? ' · ' + F.linea : ''}`;
+    $('sub-lineas').textContent = `${F.mes ? A.MESES[F.mes - 1] + ' ' : ''}${F.anio}`;
+    $('sub-detalle').textContent = periodo;
+    const parcial = F.mes && M.fraccion(F.anio, F.mes) < 1;
+    const est = $('estado'); est.replaceChildren();
+    const chip = (txt, ic, clase = '') => { const c = el('span', { className: 'chip ' + clase }); c.innerHTML = icono(ic); c.append(txt); est.append(c); };
+    chip(`Datos al ${M.ultima.slice(8, 10)}/${M.ultima.slice(5, 7)}/${M.ultima.slice(0, 4)}`, 'calendar');
+    if (parcial) chip('Mes en curso: tiempo disponible proporcional', 'clock');
+    if (k.porValidar) chip(`${k.porValidar} reportes > 8 h por validar`, 'alert', 'aviso');
+    if (D.pendientes.length) chip(`${D.pendientes.length} reportes sin publicar`, 'upload', 'aviso');
+
+    tendencia(F); porLinea(F);
+    horizontal('g-fallas', M.grupos(F, 'falla').slice(0, 10), x => corto(x.nombre));
+    horizontal('g-maquinas', M.grupos(F, 'maq').slice(0, 10), x => F.linea ? corto(x.nombre) : corto(`${x.nombre} · ${x.lin}`));
+    $('tabla-turnos').replaceChildren(...M.grupos(F, 'turno').sort((a, b) => a.nombre.localeCompare(b.nombre)).map(x =>
+      el('tr', {}, ...[x.nombre, ent(x.fallas), ent(x.paro), fmt(x.mttr), x.paro ? fmt(x.loc / x.paro * 100, 0) : '—'].map(v => el('td', { textContent: v })))));
+  }
+
+  function usar(datos, conservar) {
+    D = datos; M = A.crearModelo(D.registros, D.lineas);
+    llenarFiltros(conservar); pintar(); pendientesUI();
+    $('sub-datos').textContent = `${D.registros.length.toLocaleString('es-MX')} reportes guardados`;
+    dispatchEvent(new CustomEvent('andon-actualizado', { detail: D }));
+  }
+
+  // ---------------------------------------------------------------- subir CSV
+  const resultado = (clase, txt) => { const r = $('resultado'); r.className = 'resultado ' + clase; r.textContent = txt; r.hidden = false; };
+  function pendientesUI() {
+    $('pendientes').hidden = !D.pendientes.length;
+    $('pendientes-t').textContent = `${D.pendientes.length} reportes nuevos o actualizados en este navegador, sin publicar.`;
+  }
+  async function leer(archivo) {
+    if (!archivo) return;
+    if (!/\.csv$/i.test(archivo.name)) return resultado('error', 'Seleccione el archivo .csv exportado de ANDON.');
+    resultado('cargando', `Leyendo ${archivo.name}…`);
+    try {
+      const nuevos = A.leerCsv(await archivo.text());
+      const r = A.combinar(D.registros, nuevos);
+      const pub = new Map(D.publicados.map(x => [x.id, JSON.stringify(x)]));
+      const pendientes = r.registros.filter(x => pub.get(x.id) !== JSON.stringify(x));
+      const guardado = A.guardarLocales(pendientes);
+      usar({ ...D, registros: r.registros, pendientes }, true);
+      resultado('ok', `${archivo.name}: ${nuevos.length.toLocaleString('es-MX')} reportes leídos · ${r.agregados} nuevos · ${r.actualizados} actualizados · ${r.iguales} sin cambios.` +
+        (guardado ? '' : ' Este navegador no permitió guardarlos: publíquelos antes de cerrar la página.'));
+    } catch (e) {
+      resultado('error', e.message || 'No se pudo leer el archivo.');
+    }
+  }
+  $('archivo').addEventListener('change', e => { leer(e.target.files[0]); e.target.value = ''; });
+  const zona = $('zona');
+  zona.addEventListener('dragover', e => { e.preventDefault(); zona.classList.add('sobre'); });
+  zona.addEventListener('dragleave', () => zona.classList.remove('sobre'));
+  zona.addEventListener('drop', e => { e.preventDefault(); zona.classList.remove('sobre'); leer(e.dataTransfer.files[0]); });
+
+  $('descartar').addEventListener('click', () => {
+    if (!confirm(`¿Descartar ${D.pendientes.length} reportes sin publicar? Se vuelve a los datos publicados.`)) return;
+    A.guardarLocales([]);
+    usar({ ...D, registros: D.publicados, pendientes: [] }, true);
+    resultado('ok', 'Cambios descartados.');
+  });
+  $('descargar')?.addEventListener('click', () => {
+    const a = el('a', { download: 'andon.json', href: URL.createObjectURL(new Blob([JSON.stringify(D.registros)], { type: 'application/json' })) });
+    a.click(); URL.revokeObjectURL(a.href);
+  });
+
+  const b64 = s => { const b = new TextEncoder().encode(s); let r = '';
+    for (let i = 0; i < b.length; i += 0x8000) r += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(r); };
+  $('publicar')?.addEventListener('click', async () => {
+    const boton = $('publicar'); boton.disabled = true; resultado('cargando', 'Publicando…');
+    const url = `https://api.github.com/repos/${cfg.repo}/contents/${cfg.ruta.split('/').map(encodeURIComponent).join('/')}`;
+    const h = { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' };
+    try {
+      for (let intento = 1; ; intento++) {
+        // se parte de lo que hay en el repositorio en este momento: lo que otros publicaron se conserva
+        const meta = await fetch(url + '?ref=main', { headers: h, cache: 'no-store' });
+        if (!meta.ok && meta.status !== 404) throw meta;
+        const sha = meta.ok ? (await meta.json()).sha : undefined;
+        let remotos = [];
+        if (sha) {
+          const raw = await fetch(url + '?ref=main', { headers: { ...h, Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
+          if (!raw.ok) throw raw;
+          remotos = await raw.json();
+        }
+        const todo = A.combinar(remotos, D.pendientes).registros;
+        const r = await fetch(url, { method: 'PUT', headers: h, body: JSON.stringify(
+          { message: `ANDON: ${D.pendientes.length} reportes nuevos o actualizados desde el dashboard`, content: b64(JSON.stringify(todo)), branch: 'main', sha }) });
+        if (r.ok) break;
+        if ((r.status === 409 || r.status === 422) && intento < 3) continue;  // alguien publicó al mismo tiempo: reintentar
+        throw r;
+      }
+      resultado('ok', 'Publicado. Todos verán los datos nuevos en 1–2 minutos, cuando el sitio se regenere.');
+    } catch (r) {
+      const s = r && r.status;
+      resultado('error', s === 401 ? 'El token de publicación no es válido o expiró. Avise al responsable del sitio.'
+        : s === 403 || s === 404 ? 'El token de publicación no tiene permiso de escritura en el repositorio.'
+        : 'No se pudo conectar con GitHub. Revise la conexión e intente de nuevo; los datos siguen guardados en este navegador.');
+    } finally { boton.disabled = false; }
+  });
+
+  A.cargar('../').then(d => usar(d, false)).catch(() => {
+    $('tiles').replaceChildren(el('p', { className: 'panel tile muted', textContent: 'No se pudieron cargar los datos. Revise la conexión y recargue la página.' }));
+  });
+  // si Chart.js tarda (o no carga), las tarjetas y tablas ya funcionan; al llegar, se dibujan las gráficas
+  if (!window.Chart) document.querySelector('script[src*="chart.js"]').addEventListener('load', () => M && pintar());
+});
+</script>
+<div id="iconos" hidden><i data-i="check">{{ icono("check") }}</i><i data-i="alert">{{ icono("alert") }}</i><i data-i="calendar">{{ icono("calendar") }}</i><i data-i="clock">{{ icono("clock") }}</i><i data-i="upload">{{ icono("upload") }}</i></div>
+{% endblock %}

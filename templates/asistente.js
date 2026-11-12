@@ -1,4 +1,4 @@
-// Consulta sobre HPM: entiende preguntas en lenguaje natural y responde solo con datos de los Excel.
+// Consulta por estación (HPM y troubleshooting) y, en inicio, sobre KPIs (andon.js): responde solo con datos del sitio.
 // Corre en el navegador (GitHub Pages no tiene servidor). Un modelo semántico de 118 MB no acertó más que esto
 // en la medición con preguntas reales, así que el conocimiento vive aquí: SINONIMOS, FRECUENCIAS y CAMPOS.
 // Para que entienda palabras nuevas, agregarlas a SINONIMOS; test_build.py valida las respuestas con `node`.
@@ -92,11 +92,11 @@
     return /^[-_\s]*$/.test(v) ? 'Sin especificar' : v;
   }
 
-  function crear(hpm) {
-    const K1 = 1.2, B = 0.5, indice = hpm.pasos.map(p => {
+  // BM25 sobre `items`; campos(item) -> [[texto, peso], ...]. Devuelve ranquear(texto, permitidos).
+  function motor(items, campos) {
+    const K1 = 1.2, B = 0.5, indice = items.map(p => {
       const tf = new Map();
-      const sumar = (texto, peso) => tokens(texto).forEach(t => tf.set(t, (tf.get(t) || 0) + peso));
-      sumar(p.punto, 3); sumar(p.sec, 2); sumar([p.norma, p.contramedida, p.hta, p.material].join(' '), 1);
+      for (const [texto, peso] of campos(p)) tokens(texto).forEach(t => tf.set(t, (tf.get(t) || 0) + peso));
       return { p, tf, largo: [...tf.values()].reduce((a, b) => a + b, 0) };
     });
     const df = new Map();
@@ -139,6 +139,12 @@
       res.sort((a, b) => b.score - a.score);
       return res.filter(r => r.score >= res[0].score * 0.4).map(r => r.p);
     }
+    return ranquear;
+  }
+
+  function crear(hpm) {
+    const ranquear = motor(hpm.pasos, p => [[p.punto, 3], [p.sec, 2], [[p.norma, p.contramedida, p.hta, p.material].join(' '), 1]]);
+    const ranquearFallas = motor(hpm.fallas || [], f => [[f.efecto, 3], [f.causas.join(' '), 1]]);
 
     // "display" es también una parte de la máquina: si otra estación la nombra, exige "estacion display" o "display tester"
     function estacionEn(q) {
@@ -159,7 +165,18 @@
       return def ? `${sigla[1].toUpperCase()}: ${def[1].trim()}` : null;
     }
 
+    // además de los pasos HPM, los efectos de troubleshooting que coinciden (máx. 3)
     return function responder(consulta, estacion) {
+      const r = responderHpm(consulta, estacion);
+      const q = norm(consulta);
+      if (!r || !(hpm.fallas || []).length || /\b(paso|punto|numero)\s*\d+\b|signific|que es\b|que son\b/.test(q)) return r;
+      const e = estacionEn(q), slug = e ? e.slug : estacion;
+      r.fallas = ranquearFallas(q, new Set(hpm.fallas.filter(f => !slug || f.e === slug))).slice(0, 3);
+      if (r.fallas.length && r.texto === NADA) r.texto = null;
+      return r;
+    };
+
+    function responderHpm(consulta, estacion) {
       let q = norm(consulta).replace(/[¿?¡!.,;:]/g, ' ').replace(/\s+/g, ' ').trim()
         .replace(/\b(un|una|dos|tres|cuatro|seis|ocho|nueve) (mes|meses|semana|semanas)\b/g, (_, n, u) => `${NUMEROS[n]} ${u}`);
       if (!q) return null;
@@ -243,9 +260,16 @@
 
   const caja = document.getElementById('consulta-q'), salida = document.getElementById('consulta-res');
   const seccion = caja.closest('.consulta'), raizSitio = seccion.dataset.raiz, estacion = seccion.dataset.estacion || undefined;
+  const modo = seccion.dataset.modo;  // estacion | general | kpi
   const el = (tag, clase, texto) => Object.assign(document.createElement(tag), { className: clase, textContent: texto });
-  const datos = fetch(raizSitio + 'hpm.json').then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(hpm => ({ hpm, responder: crear(hpm) }));
+  const json = u => fetch(raizSitio + u).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+  const datos = Promise.all([
+    modo === 'kpi' ? null : json('hpm.json'),
+    modo === 'estacion' ? null : window.ANDON.cargar(raizSitio).then(d => window.ANDON.crearConsulta(d.registros, d.lineas))
+  ]).then(([hpm, kpi]) => ({ hpm, kpi, responder: hpm && crear(hpm) }));
+  // el dashboard avisa cuando se sube un CSV, para que la consulta use los datos nuevos
+  addEventListener('andon-actualizado', e => datos.then(d => { d.kpi = window.ANDON.crearConsulta(e.detail.registros, e.detail.lineas); }));
+  const NADA_KPI = 'Sin respuesta. Pregunte por BDR, MTTR, MTBF o fallas, con mes y línea; por ejemplo «MTTR de octubre en Honda 25SA» o «máquinas con más fallas».';
 
   function pintar(r, hpm) {
     salida.replaceChildren();
@@ -256,10 +280,16 @@
       for (const [v, n] of r.valores) ul.append(el('li', '', n ? `${v} (${n})` : v));
       salida.append(ul);
     }
-    const seguridad = r.pasos[0] && hpm.pasos.find(p => p.e === r.pasos[0].e && p.sec === 'PRECAUCIONES DE SEGURIDAD');
+    if (r.kpi) {
+      const a = el('a', 'btn btn-secondary consulta-kpi', 'Ver indicadores');
+      a.href = `${raizSitio}kpi/`;
+      salida.append(a);
+    }
+    const pasos = r.pasos || [];
+    const seguridad = pasos[0] && hpm.pasos.find(p => p.e === pasos[0].e && p.sec === 'PRECAUCIONES DE SEGURIDAD');
     if (seguridad) salida.append(el('p', 'consulta-seg', `Precaución (paso ${seguridad.n}): ${seguridad.contramedida}`));
     const nombre = slug => hpm.estaciones.find(e => e.slug === slug).nombre;
-    for (const p of r.pasos) {
+    for (const p of pasos) {
       const a = el('a', 'consulta-item', '');
       a.href = `${raizSitio}estacion/${p.e}/#paso-${p.n}`;
       a.append(el('b', 'consulta-n', p.n), el('span', 'consulta-punto', p.punto));
@@ -273,11 +303,31 @@
       a.append(caja2);
       salida.append(a);
     }
+    if ((r.fallas || []).length) salida.append(el('p', 'eyebrow consulta-grupo', 'Troubleshooting'));
+    for (const f of r.fallas || []) {
+      const a = el('a', 'consulta-item', '');
+      a.href = `${raizSitio}estacion/${f.e}/troubleshooting/#efecto-${f.n}`;
+      a.append(el('b', 'consulta-n consulta-n-ts', f.n), el('span', 'consulta-punto', f.efecto));
+      const caja2 = el('div', 'consulta-datos', '');
+      if (f.causas.length) {
+        const fila = el('div', '', '');
+        fila.append(el('b', '', 'Posibles causas: '), document.createTextNode(f.causas.slice(0, 3).join(' · ') + (f.causas.length > 3 ? ` y ${f.causas.length - 3} más` : '')));
+        caja2.append(fila);
+      }
+      caja2.append(el('small', 'muted', [estacion ? null : nombre(f.e), f.categoria].filter(Boolean).join(' · ')));
+      a.append(caja2);
+      salida.append(a);
+    }
   }
 
   caja.addEventListener('input', async () => {
     try {
-      const { hpm, responder } = await datos;
+      const { hpm, kpi, responder } = await datos;
+      if (!caja.value.trim()) return salida.replaceChildren();
+      if (kpi && (modo === 'kpi' || window.ANDON.esKpi(caja.value))) {
+        const r = kpi(caja.value) || { texto: NADA_KPI };
+        return pintar({ ...r, kpi: modo === 'general' }, hpm);
+      }
       pintar(responder(caja.value, estacion), hpm);
     } catch (e) {
       salida.replaceChildren(el('p', 'muted', 'No se pudieron cargar los datos de consulta. Revisa la conexión y recarga la página.'));
