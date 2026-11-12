@@ -36,8 +36,6 @@
   .tile-v { font: 700 var(--fs-2xl)/1 var(--font-display); color: var(--c-ink); font-variant-numeric: tabular-nums; }
   .tile-v small { font: 600 var(--fs-md)/1 var(--font-display); color: var(--c-muted); margin-left: 2px; }
   .tile-meta { font-size: var(--fs-xs); color: var(--c-muted); }
-  .tile-delta { font-size: var(--fs-xs); color: var(--c-muted); min-height: 1.4em; }
-  .mejor { color: var(--c-success); } .peor { color: var(--c-danger); }
 
   /* gráficas */
   .graficas { display: grid; gap: var(--sp-4); }
@@ -201,27 +199,19 @@ addEventListener('DOMContentLoaded', () => {
   $('f-maq').addEventListener('change', pintar);
 
   // ---------------------------------------------------------------- tarjetas
-  function tarjetas(k, prev, etiquetaPrev) {
+  function tarjetas(k) {
     const T = [
-      { id: 'bdr', t: 'BDR', v: k.bdr, d: 2, u: '%', principal: true, menor: true, metaT: k.loading ? `Loading ${ent(k.loading)} min` : 'Sin loading en Datos Maestros' },
-      { id: 'mttr', t: 'MTTR', v: k.mttr, d: 1, u: 'min', principal: true, menor: true, metaT: '' },
-      { id: 'mtbf', t: 'MTBF', v: k.mtbf, d: 1, u: 'h', principal: true, menor: false, metaT: '' },
-      { id: 'fallas', t: 'Fallas', v: k.fallas, d: 0, u: '', menor: true, metaT: '' },
-      { id: 'paro', t: 'Downtime', v: k.paro, d: 0, u: 'min', menor: true, metaT: 'Tiempo de reparación' },
+      { t: 'BDR', v: k.bdr, d: 2, u: '%', principal: true, metaT: k.loading ? '' : 'Sin loading en Datos Maestros' },
+      { t: 'MTTR', v: k.mttr, d: 1, u: 'min', principal: true, metaT: '' },
+      { t: 'MTBF', v: k.mtbf, d: 1, u: 'h', principal: true, metaT: '' },
+      { t: 'Fallas', v: k.fallas, d: 0, u: '', metaT: '' },
+      { t: 'Downtime', v: k.paro, d: 0, u: 'min', metaT: 'Tiempo de reparación' },
     ];
     $('tiles').replaceChildren(...T.map(x => {
       const tile = el('article', { className: 'panel tile' + (x.principal ? ' principal' : '') });
       const v = el('p', { className: 'tile-v' }, x.v == null ? '—' : fmt(x.v, x.d));
       if (x.u && x.v != null) v.append(el('small', { textContent: x.u }));
       tile.append(el('p', { className: 'eyebrow', textContent: x.t }), v, el('p', { className: 'tile-meta', textContent: x.metaT }));
-      const p = prev && prev[x.id];
-      const delta = el('p', { className: 'tile-delta' });
-      if (p != null && x.v != null && prev.fallas) {
-        const dif = x.v - p, mejor = x.menor ? dif < 0 : dif > 0;
-        delta.append(`${dif > 0 ? '▲' : dif < 0 ? '▼' : '='} ${fmt(Math.abs(dif), x.d)} vs ${etiquetaPrev} `);
-        if (dif) delta.append(el('span', { className: mejor ? 'mejor' : 'peor', textContent: mejor ? '(mejor)' : '(peor)' }));
-      }
-      tile.append(delta);
       return tile;
     }));
   }
@@ -293,10 +283,7 @@ addEventListener('DOMContentLoaded', () => {
   function pintar() {
     const F = f();
     const k = M.calcular(F);
-    // comparación: mes anterior, o el año anterior si se ve el año completo
-    const pF = F.mes ? (F.mes === 1 ? { ...F, anio: F.anio - 1, mes: 12 } : { ...F, mes: F.mes - 1 }) : { ...F, anio: F.anio - 1 };
-    const prev = F.mes ? (M.hayDatos(pF.anio, pF.mes) ? M.calcular(pF) : null) : (M.anios.includes(pF.anio) ? M.calcular(pF) : null);
-    tarjetas(k, prev, F.mes ? A.MESES[pF.mes - 1].toLowerCase() : pF.anio);
+    tarjetas(k);
     $('sub-tendencia').textContent = `${F.anio}${F.linea ? ' · ' + F.linea : ''}${F.maq ? ' · ' + F.maq : ''}`;
     $('sub-lineas').textContent = `${F.mes ? A.MESES[F.mes - 1] + ' ' : ''}${F.anio}`;
     const est = $('estado'); est.replaceChildren();
