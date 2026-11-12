@@ -82,11 +82,11 @@
   addEventListener('DOMContentLoaded', () => ANDON.cargar('').then(({ registros, lineas }) => {
     const M = ANDON.crearModelo(registros, lineas), anio = +M.ultima.slice(0, 4), mes = +M.ultima.slice(5, 7);
     const k = M.calcular({ anio, mes }), f = (x, d) => x == null ? '—' : x.toLocaleString('es-MX', { maximumFractionDigits: d, minimumFractionDigits: d });
-    const fila = (t, v, u, ok) => `<div><dt>${t}</dt><dd>${v}<small>${u} · ${ok ? 'en meta' : 'fuera de meta'}</small></dd></div>`;
+    const fila = (t, v, u) => `<div><dt>${t}</dt><dd>${v}<small>${u}</small></dd></div>`;
     document.getElementById('kpi-periodo').textContent = `Indicadores · ${ANDON.MESES[mes - 1]} ${anio}`;
     const mini = document.getElementById('kpi-mini');
-    mini.innerHTML = fila('BDR', f(k.bdr, 2), '%', k.bdr <= ANDON.METAS.bdr) + fila('MTTR', f(k.mttr, 1), 'min', k.mttr <= ANDON.METAS.mttr)
-                   + fila('MTBF', f(k.mtbf, 1), 'h', k.mtbf >= ANDON.METAS.mtbf);
+    mini.innerHTML = fila('BDR', f(k.bdr, 2), '%') + fila('MTTR', f(k.mttr, 1), 'min')
+                   + fila('MTBF', f(k.mtbf, 1), 'h');
     mini.hidden = false;
   }).catch(() => {}));
 </script>

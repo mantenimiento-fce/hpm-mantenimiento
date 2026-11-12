@@ -1,16 +1,17 @@
 // Indicadores de mantenimiento (BDR, MTTR, MTBF) desde la exportación "Reportes de mantenimiento" de ANDON.
-// Reglas: Maintenance 2026/KPIs_Mantenimiento_BDR_MTTR_MTBF.md (sección 7.3). Lo usan el dashboard, las consultas
-// y test_build.py (con node). El tiempo disponible por línea sale del Excel (lineas.json, lo genera build.py).
+// Solo cuentan los reportes con "Genero interrupcion?" = Si, con línea y máquina (no "N/A") y que no pidió
+// "ADMINISTRADOR DEL SISTEMA"; cada uno es una falla. Downtime (breakdown time) =
+// "Tiempo de reparacion (segundos)"; espera = "Tiempo de localización"; la fecha es "Inicio de la falla" (día/mes/año). El tiempo disponible (loading)
+// es fijo por línea y mes, de la hoja Datos Maestros Actual del Excel (lineas.json, lo genera build.py).
+// Unidades: downtime, espera, loading y MTTR en minutos; MTBF en horas; BDR en %.
+// Lo usan el dashboard, las consultas y test_build.py (con node).
 (function () {
-  const AREAS = new Set(['Mantenimiento Mecanico', 'Mantenimiento Electrico']);
-  const MAX_MIN = 480;  // > 1 turno: reporte que se dejó abierto, se separa para validar
-  const METAS = { bdr: 1.9, mttr: 15, mtbf: 32 };  // hoja KPI Mantto 2026
   const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
   const AUTO = /^Reporte cerrado autom/i;
   // columna de ANDON -> campo del registro (se busca por inicio del nombre: "Estatus del reporte (0=...)")
   const COLS = { id: 'Número', ini: 'Inicio de la falla', turno: 'Turno', est: 'Estatus del reporte', loc: 'Tiempo de localización',
                  rep: 'Tiempo de reparacion', tot: 'Tiempo total de la parada', lin: 'Linea', maq: 'Maquina', area: 'Area que atendio',
-                 falla: 'Falla confirmada', det: 'Detalle de la falla', int: 'Genero interrupcion' };
+                 falla: 'Falla confirmada', det: 'Detalle de la falla', int: 'Genero interrupcion', sol: 'Usuario solicitante' };
 
   const norm = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -60,7 +61,7 @@
       const id = parseInt(v('id'), 10), ini = fecha(v('ini'));
       if (!id || !ini) continue;
       out.push({ id, ini, turno: v('turno'), est: +v('est') || 0, loc: +v('loc') || 0, rep: +v('rep') || 0, tot: +v('tot') || 0,
-                 lin: v('lin'), maq: v('maq'), area: v('area'), falla: v('falla'), int: v('int'), auto: AUTO.test(v('det')) ? 1 : 0 });
+                 lin: v('lin'), maq: v('maq'), area: v('area'), falla: v('falla'), int: v('int'), sol: v('sol'), auto: AUTO.test(v('det')) ? 1 : 0 });
     }
     if (!out.length) throw new Error('El archivo no trae reportes con número y fecha de inicio.');
     return out;
@@ -82,41 +83,35 @@
     return { registros: [...m.values()].sort((a, b) => a.id - b.id), agregados, actualizados, iguales };
   }
 
-  // reportes que cuentan como paro por falla de Mantenimiento (sin el límite de duración)
-  const cuenta = r => AREAS.has(r.area) && r.int === 'Si' && !r.auto && !/^(SMD|LINEA PRUEBA)/i.test(r.lin);
+  const NA = /^(n\/?a|)$/i;
+  const cuenta = r => r.int === 'Si' && !NA.test(r.lin) && !NA.test(r.maq) && r.sol !== 'ADMINISTRADOR DEL SISTEMA';
   const mesDe = r => +r.ini.slice(5, 7), anioDe = r => +r.ini.slice(0, 4);
 
-  function crearModelo(registros, lineas) {
-    const base = registros.filter(cuenta);
+  function crearModelo(todos, lineas) {
+    const registros = todos.filter(cuenta);
     const ultima = registros.reduce((a, r) => r.ini > a ? r.ini : a, '');
-    const [uA, uM, uD] = [+ultima.slice(0, 4), +ultima.slice(5, 7), +ultima.slice(8, 10)];
     const anios = [...new Set(registros.map(anioDe))].sort();
+    const conDatos = new Set(registros.map(r => r.ini.slice(0, 7)));  // "2026-01"
+    const hayDatos = (a, m) => conDatos.has(`${a}-${String(m).padStart(2, '0')}`);
 
-    // fracción del mes con datos: el mes en curso solo cuenta hasta el último reporte
-    function fraccion(a, m) {
-      if (a < uA || (a === uA && m < uM)) return 1;
-      if (a === uA && m === uM) return uD / new Date(a, m, 0).getDate();
-      return 0;
-    }
-    const disponible = (linea) => linea ? lineas.lineas[linea] : lineas.planta;
+    // loading fijo por mes (min); el año suma solo los meses con reportes
     function loading(anio, mes, linea) {
-      const porMes = disponible(linea);
+      const porMes = linea ? lineas.lineas[linea] : lineas.planta;
       if (!porMes) return null;
-      const meses = mes ? [mes] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-      return porMes * meses.reduce((s, m) => s + fraccion(anio, m), 0);
+      return porMes * (mes ? 1 : MESES.filter((_, i) => hayDatos(anio, i + 1)).length);
     }
 
-    const filtrar = ({ anio, mes, linea }) => base.filter(r => anioDe(r) === anio && (!mes || mesDe(r) === mes) && (!linea || r.lin === linea));
+    const filtrar = ({ anio, mes, linea, maq }) => registros.filter(r => anioDe(r) === anio && (!mes || mesDe(r) === mes)
+      && (!linea || r.lin === linea) && (!maq || r.maq === maq));
 
     function kpis(regs, L) {
-      const validos = regs.filter(r => r.tot / 60 <= MAX_MIN);
-      const paro = validos.reduce((s, r) => s + r.tot, 0) / 60, n = validos.length;
-      return { fallas: n, paro, loc: validos.reduce((s, r) => s + r.loc, 0) / 60, rep: validos.reduce((s, r) => s + r.rep, 0) / 60,
-               porValidar: regs.length - n, loading: L,
+      const n = regs.length, suma = k => regs.reduce((s, r) => s + r[k], 0) / 60;  // segundos -> min
+      const paro = suma('rep');  // breakdown time: solo el tiempo de reparación
+      return { fallas: n, paro, loc: suma('loc'), rep: suma('rep'), loading: L,
                bdr: L ? paro / L * 100 : null, mttr: n ? paro / n : null, mtbf: L && n ? (L - paro) / n / 60 : null };
     }
     const calcular = f => kpis(filtrar(f), loading(f.anio, f.mes, f.linea));
-    const serie = (anio, linea) => MESES.map((_, i) => ({ mes: i + 1, ...calcular({ anio, mes: i + 1, linea }), conDatos: fraccion(anio, i + 1) > 0 }));
+    const serie = (anio, linea, maq) => MESES.map((_, i) => ({ mes: i + 1, ...calcular({ anio, mes: i + 1, linea, maq }), conDatos: hayDatos(anio, i + 1) }));
 
     // por línea, máquina, falla o turno; ordenado por tiempo de paro
     function grupos(f, campo) {
@@ -125,8 +120,10 @@
       return [...g].map(([nombre, regs]) => ({ nombre, lin: regs[0].lin,
         ...kpis(regs, campo === 'lin' ? loading(f.anio, f.mes, nombre) : null) })).sort((a, b) => b.paro - a.paro);
     }
-    const lineasConDatos = [...new Set(base.map(r => r.lin))].sort((a, b) => a.localeCompare(b));
-    return { calcular, serie, grupos, anios, ultima, lineasConDatos, fraccion };
+    const orden = l => [...new Set(l)].sort((a, b) => a.localeCompare(b));
+    const lineasConDatos = orden(registros.map(r => r.lin));
+    const maquinas = linea => orden(registros.filter(r => !linea || r.lin === linea).map(r => r.maq));
+    return { calcular, serie, grupos, anios, ultima, lineasConDatos, maquinas, hayDatos };
   }
 
   // ------------------------------------------------------------ consulta en lenguaje natural sobre los KPIs
@@ -157,9 +154,9 @@
       if (!q) return null;
       const def = /que (es|son|significa)|definicion|como se calcula|formula/.test(q) && /\b(bdr|mttr|mtbf)\b/.exec(q);
       if (def) return { texto: {
-        bdr: 'BDR (Breakdown Rate): % del tiempo disponible que se perdió por fallas. BDR = tiempo de paro ÷ tiempo disponible × 100. Menor es mejor; meta ≤ 1.9 %.',
-        mttr: 'MTTR (Mean Time To Repair): duración promedio de cada falla, del paro hasta que el equipo vuelve a operar (espera del técnico + reparación). MTTR = tiempo de paro ÷ número de fallas. Menor es mejor; meta ≤ 15 min.',
-        mtbf: 'MTBF (Mean Time Between Failures): tiempo promedio que el equipo opera entre una falla y la siguiente. MTBF = (tiempo disponible − tiempo de paro) ÷ número de fallas. Mayor es mejor; meta ≥ 32 h.'
+        bdr: 'BDR (Breakdown Rate): % del tiempo disponible que se perdió por fallas. BDR (%) = tiempo de reparación ÷ tiempo disponible × 100.',
+        mttr: 'MTTR (Mean Time To Repair): tiempo promedio que el técnico tarda en reparar cada falla. MTTR (min) = tiempo de reparación ÷ número de fallas.',
+        mtbf: 'MTBF (Mean Time Between Failures): tiempo promedio que el equipo opera entre una falla y la siguiente. MTBF (h) = (tiempo disponible − tiempo de reparación) ÷ número de fallas ÷ 60.'
       }[def[1]] };
 
       // periodo: mes y año nombrados; "este año" = año completo; sin periodo = mes más reciente
@@ -171,17 +168,17 @@
       else if (!mes && !anioQ && !/\b(ano|anual|acumulado)\b/.test(q)) mes = uM;
       const linea = lineaEn(q);
       const f = { anio, mes, linea };
-      const periodo = `${mes ? MESES[mes - 1] + ' ' : ''}${anio}${mes && M.fraccion(anio, mes) < 1 && M.fraccion(anio, mes) > 0 ? ' (mes en curso)' : ''}`;
+      const periodo = `${mes ? MESES[mes - 1] + ' ' : ''}${anio}`;
       const donde = `${periodo}${linea ? ' · ' + linea : ''}`;
       const k = M.calcular(f);
-      if (!k.fallas && !k.porValidar) return { texto: `Sin fallas registradas en ${donde}.` };
+      if (!k.fallas) return { texto: `Sin fallas registradas en ${donde}.` };
 
       const porParo = /tiempo|paro|downtime|minutos|duracion/.test(q);
       const top = (campo, titulo) => {
         const g = M.grupos(f, campo).filter(x => x.fallas);
         if (!porParo) g.sort((a, b) => b.fallas - a.fallas);
         return { texto: `${titulo} en ${donde}${porParo ? ' (por tiempo de paro)' : ' (por número de fallas)'}:`,
-                 valores: g.slice(0, 5).map(x => [`${x.nombre}${campo === 'maq' && !linea ? ' · ' + x.lin : ''}: ${x.fallas} fallas, ${ent(x.paro)} min de paro, MTTR ${f1(x.mttr)} min`]) };
+                 valores: g.slice(0, 5).map(x => [`${x.nombre}${campo === 'maq' && !linea ? ' · ' + x.lin : ''}: ${x.fallas} fallas, ${ent(x.paro)} min de downtime, MTTR ${f1(x.mttr)} min`]) };
       };
       if (/(maquina|equipo|estacion)s? (con )?(mas|peor)|top maquinas/.test(q)) return top('maq', 'Máquinas con más fallas');
       if (/lineas? (con )?(mas|peor)/.test(q)) return top('lin', 'Líneas con más fallas');
@@ -189,14 +186,13 @@
       if (/pareto|causa|tipo de falla|fallas? mas (comun|frecuente)/.test(q)) return top('falla', 'Fallas más frecuentes');
 
       const partes = {
-        bdr: k.bdr == null ? `BDR sin calcular (${linea} no tiene tiempo disponible en Datos Maestros)` : `BDR ${f1(k.bdr, 2)} % (meta ≤ ${METAS.bdr} %)`,
-        mttr: `MTTR ${f1(k.mttr)} min (meta ≤ ${METAS.mttr})`,
-        mtbf: k.mtbf == null ? 'MTBF sin calcular' : `MTBF ${f1(k.mtbf)} h (meta ≥ ${METAS.mtbf})`
+        bdr: k.bdr == null ? `BDR sin calcular (${linea} no tiene tiempo disponible en Datos Maestros)` : `BDR ${f1(k.bdr, 2)} %`,
+        mttr: `MTTR ${f1(k.mttr)} min`,
+        mtbf: k.mtbf == null ? 'MTBF sin calcular' : `MTBF ${f1(k.mtbf)} h`
       };
       const pedidos = ['bdr', 'mttr', 'mtbf'].filter(x => q.includes(x));
-      const valores = [[`${ent(k.fallas)} fallas · ${ent(k.paro)} min de paro`]];
-      if (k.fallas) valores.push([`Espera del técnico ${f1(k.loc / k.paro * 100, 0)} % · reparación ${f1(k.rep / k.paro * 100, 0)} %`]);
-      if (k.porValidar) valores.push([`${k.porValidar} reportes de más de 8 h quedan fuera, por validar`]);
+      const valores = [[`${ent(k.fallas)} fallas · ${ent(k.paro)} min de downtime`]];
+      valores.push([`Espera del técnico ${ent(k.loc)} min`]);
       return { texto: `${donde}: ${(pedidos.length ? pedidos : ['bdr', 'mttr', 'mtbf']).map(x => partes[x]).join(' · ')}.`, valores };
     };
   }
@@ -221,7 +217,7 @@
       });
   }
 
-  const api = { leerCsv, combinar, crearModelo, crearConsulta, esKpi, cuenta, cargar, locales, guardarLocales, masReciente, METAS, MESES, MAX_MIN };
+  const api = { leerCsv, combinar, crearModelo, crearConsulta, esKpi, cuenta, cargar, locales, guardarLocales, masReciente, MESES };
   if (typeof module !== 'undefined') module.exports = api;
   else window.ANDON = api;
 })();

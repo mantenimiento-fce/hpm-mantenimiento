@@ -22,14 +22,23 @@ Corre en el navegador, sin servidor ni modelo. Para que entienda palabras nuevas
 
 ## Indicadores (BDR, MTTR, MTBF)
 
-Fórmulas y reglas de filtrado: `Maintenance 2026/KPIs_Mantenimiento_BDR_MTTR_MTBF.md`, implementadas en
-`templates/andon.js`. Cuentan los reportes de Mantenimiento Mecánico/Eléctrico con interrupción = Si, sin cierres
-automáticos ni líneas SMD / LINEA PRUEBA; los de más de 8 h se separan como "por validar".
+Implementados en `templates/andon.js`. **Solo cuentan los reportes con *Genero interrupcion?* = Si, con *Linea* y *Maquina*
+distintas de "N/A" y cuyo *Usuario solicitante* no es ADMINISTRADOR DEL SISTEMA** (en todos los KPIs, gráficas, tablas,
+filtros y consultas); cada uno es una falla. La fecha es *Inicio de la falla* (día/mes/año).
+
+| Indicador | Cálculo | Unidad |
+|---|---|---|
+| Fallas | número de filas (del filtro: periodo, línea, máquina) | — |
+| Downtime (breakdown time) | suma de *Tiempo de reparacion (segundos)* ÷ 60 | min |
+| Espera del técnico | suma de *Tiempo de localización (segundos)* ÷ 60 | min |
+| Loading | fijo por mes, hoja *Datos Maestros Actual* de `Maintenance 2026/KPI*.xlsx`; el año suma los meses con reportes | min |
+| BDR | downtime ÷ loading × 100 | % |
+| MTTR | downtime ÷ fallas | min |
+| MTBF | (loading − downtime) ÷ fallas ÷ 60 | h |
 
 - **Reportes**: `Maintenance 2026/andon.json` (todos los reportes ANDON acumulados).
-- **Tiempo disponible**: hoja *Datos Maestros Actual* de `Maintenance 2026/KPI*.xlsx`. La relación entre los nombres de
-  línea de ANDON y los de Datos Maestros está en `LINEAS_ANDON` (`build.py`). El mes en curso usa tiempo proporcional.
-- **Metas**: `METAS` en `templates/andon.js`.
+- La relación entre los nombres de línea de ANDON y los de Datos Maestros está en `LINEAS_ANDON` (`build.py`). Las
+  líneas sin loading (SMD, N/A…) cuentan fallas y downtime, pero no BDR ni MTBF.
 
 ### Actualizar con un CSV de ANDON
 
